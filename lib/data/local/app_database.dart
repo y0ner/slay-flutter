@@ -65,13 +65,17 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        // Fase 0: agregamos `isLocal` a `CachedCategories`. Como la app
-        // todavía no hidrata el cache de forma estable, lo más simple es
-        // borrar todo y recrear las tablas con el schema nuevo.
+        // Fase 0: agregamos `isLocal` a `CachedCategories`. Como todavía
+        // no hidratamos el cache de forma estable, lo más simple es
+        // borrar y recrear todas las tablas con el schema nuevo.
+        //
+        // `m.createAll()` solo crea las tablas que NO existen; si la
+        // tabla ya estaba (de un schema viejo), la deja como está. Por
+        // eso hacemos `DROP TABLE IF EXISTS` explícito antes.
         onUpgrade: (m, from, to) async {
-          await m.deleteTable('pending_ops');
-          await m.deleteTable('cached_categories');
-          await m.deleteTable('cached_tasks');
+          for (final table in ['pending_ops', 'cached_categories', 'cached_tasks']) {
+            await m.database.customStatement('DROP TABLE IF EXISTS $table');
+          }
           await m.createAll();
         },
         // Cold start (instalación nueva) — crear todo desde cero.

@@ -117,6 +117,7 @@ EOF
 ### Linux desktop
 
 ```bash
+cp .env.example .env       # completar claves
 ./run.sh linux
 ```
 
@@ -132,9 +133,11 @@ EOF
 # 3. Verificar
 flutter devices
 # 4. Instalar y correr (debug)
-flutter run -d <device-id> \
-  --dart-define=SUPABASE_URL=https://xxxxx.supabase.co \
-  --dart-define=SUPABASE_ANON_KEY=eyJhbGc...
+./run.sh android
+# o equivalente:
+# flutter run -d <device-id> \
+#   --dart-define=SUPABASE_URL=https://xxxxx.supabase.co \
+#   --dart-define=SUPABASE_ANON_KEY=eyJhbGc...
 ```
 
 > La primera vez tarda ~5-10 min (descarga Gradle deps). Builds subsiguientes son segundos.
@@ -231,6 +234,26 @@ flutter test
 | `requires core library desugaring to be enabled` | Agregar `coreLibraryDesugaringEnabled true` + `desugar_jdk_libs:2.0.4` a `android/app/build.gradle` |
 | `BUILD FAILED` en Android por SDK | `flutter doctor` y aceptar licencias: `flutter doctor --android-licenses` |
 | Notificaciones no suenan | Settings → Apps → Slay → Notificaciones → ON (Android 13+) |
+
+---
+
+## 🌿 Workflow de desarrollo
+
+Por convención, cada corrección / feature va en una **rama paralela a `main`**
+y se valida antes de mergear (sin Pull Requests, dado que es app personal).
+
+Ver [CONTRIBUTING.md](CONTRIBUTING.md) para el detalle completo. Resumen:
+
+```bash
+git checkout -b fix/<descripcion>   # rama desde main
+# ... cambios, pruebas en el celu ...
+git commit -m "fix: ..."
+git checkout main
+git merge --no-ff fix/<descripcion> # merge directo, sin PR
+git push
+```
+
+Tipos de rama: `fix/`, `feat/`, `chore/`, `docs/`.
 
 ---
 

@@ -53,6 +53,13 @@ app.*.map.json
 # Mantené el directorio para los placeholders/README, pero ignorá los CSV.
 /migration_data/*.csv
 
+# Passwords y secrets puntuales (DB password de Supabase, etc.)
+Password_Database_Supabase
+*_Database_*
+*_password*
+*.pem
+*.key
+
 # Cache de Gradle y archivos del IDE
 *.iml
 .idea/

@@ -1,0 +1,68 @@
+name: slay_flutter
+description: "Slay — gestor de tareas multiplataforma (Android, Linux, Windows) sobre Supabase."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # ── Supabase ─────────────────────────────────────────────
+  supabase_flutter: ^2.8.4
+
+  # ── Estado ───────────────────────────────────────────────
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # ── Modelos / serialización ──────────────────────────────
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+
+  # ── UI / routing ─────────────────────────────────────────
+  go_router: ^14.6.2
+  intl: ^0.19.0
+  table_calendar: ^3.1.2
+
+  # ── Persistencia local (tema, calendar view) ────────────
+  shared_preferences: ^2.3.3
+
+  # ── Notificaciones / recordatorios ───────────────────────
+  flutter_local_notifications: ^17.2.4
+  flutter_timezone: ^3.0.1
+  timezone: ^0.9.4
+
+  # ── Network ──────────────────────────────────────────────
+  connectivity_plus: ^6.1.0
+
+  # ── DB local (modo offline) ──────────────────────────────
+  drift: ^2.20.0
+  drift_flutter: ^0.2.0
+  path_provider: ^2.1.4
+  path: ^1.9.0
+
+  # Para el script de migración bin/migrate.dart
+  http: ^1.2.2
+  csv: ^6.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+  # Generadores de código
+  build_runner: ^2.4.13
+  freezed: ^2.5.7
+  json_serializable: ^6.8.0
+
+  # Para el script de migración bin/migrate.dart
+  # (http y csv ahora en dependencies porque bin/migrate.dart los importa)
+
+  # Generadores de Drift
+  drift_dev: ^2.20.0
+
+flutter:
+  uses-material-design: true

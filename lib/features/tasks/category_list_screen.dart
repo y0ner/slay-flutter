@@ -24,12 +24,24 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
 
   /// Aplica el reorder: actualiza el array local optimistamente, lo
   /// persiste en Supabase (`sort_order` 0..N-1) e invalida el stream.
+  ///
+  /// El paquete `reorderable_grid_view` devuelve como `newIndex` el
+  /// índice de la card OBJETIVO (no el slot entre items). Eso difiere
+  /// de `ReorderableListView`. Acá adoptamos la semántica "drop sobre
+  /// el target = el item va a la posición siguiente, debajo en el
+  /// flujo lineal", que es lo que espera el usuario.
   Future<void> _onReorder(List<Category> list, int oldIndex, int newIndex) async {
-    // El paquete usa la misma convención que ReorderableListView:
-    // si newIndex > oldIndex, hay que restar 1 después de remover.
+    if (oldIndex == newIndex) return;
     final updated = [...list];
     final moved = updated.removeAt(oldIndex);
-    updated.insert(newIndex > oldIndex ? newIndex - 1 : newIndex, moved);
+    // Tras remover, el target está en:
+    //   newIndex        si newIndex < oldIndex (no se movió)
+    //   newIndex - 1    si newIndex > oldIndex (los posteriores se shifts up)
+    // Insertar DESPUÉS del target:
+    //   newIndex + 1    si newIndex < oldIndex
+    //   newIndex        si newIndex > oldIndex
+    final insertAt = newIndex > oldIndex ? newIndex : newIndex + 1;
+    updated.insert(insertAt, moved);
     await ref.read(categoryRepositoryProvider).reorder(updated);
     ref.invalidate(categoriesStreamProvider);
   }

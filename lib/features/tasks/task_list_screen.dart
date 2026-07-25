@@ -64,8 +64,11 @@ class TaskListScreen extends ConsumerWidget {
                           task: list[i],
                           category: cat,
                           onTap: () => context.push('/subtasks/${list[i].id}'),
-                          onToggle: () => ref.read(taskRepositoryProvider)
-                              .toggleComplete(list[i].id, !list[i].isCompleted),
+                          onToggle: () async {
+                            await ref.read(taskRepositoryProvider)
+                                .toggleComplete(list[i].id, !list[i].isCompleted);
+                            ref.invalidate(tasksStreamProvider);
+                          },
                           onEdit: () => showDialog(
                             context: context,
                             builder: (_) => EditTaskDialog(task: list[i]),

@@ -55,13 +55,19 @@ class SubTaskListScreen extends ConsumerWidget {
                               : null,
                         )),
                     value: s.isCompleted,
-                    onChanged: (v) => ref.read(taskRepositoryProvider)
-                        .toggleSubtaskComplete(s.id, v ?? false),
+                    onChanged: (v) async {
+                      await ref.read(taskRepositoryProvider)
+                          .toggleSubtaskComplete(s.id, v ?? false);
+                      ref.invalidate(subtasksStreamProvider(taskId));
+                    },
                     secondary: IconButton(
                       icon: const Icon(Icons.delete_outline),
-                      onPressed: () => ref
-                          .read(taskRepositoryProvider)
-                          .deleteSubtask(s.id),
+                      onPressed: () async {
+                        await ref
+                            .read(taskRepositoryProvider)
+                            .deleteSubtask(s.id);
+                        ref.invalidate(subtasksStreamProvider(taskId));
+                      },
                     ),
                   );
                 },
@@ -88,6 +94,10 @@ class SubTaskListScreen extends ConsumerWidget {
                 taskId: taskId,
                 title: ctrl.text.trim(),
               );
+              // Invalidar explícito: realtime puede tardar unos ms
+              // en llegar (especialmente en conexiones lentas); esto
+              // garantiza refresco inmediato sin pull-to-refresh.
+              ref.invalidate(subtasksStreamProvider(taskId));
               if (context.mounted) Navigator.pop(context);
             },
             child: const Text('Guardar'),

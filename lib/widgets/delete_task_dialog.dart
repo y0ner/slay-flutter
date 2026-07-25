@@ -26,6 +26,7 @@ class DeleteTaskDialog extends ConsumerWidget {
           ),
           onPressed: () async {
             await ref.read(taskRepositoryProvider).delete(task.id);
+            ref.invalidate(tasksStreamProvider);
             if (context.mounted) Navigator.pop(context);
           },
           child: const Text('Eliminar'),

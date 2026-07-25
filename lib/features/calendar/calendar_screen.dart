@@ -85,9 +85,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             task: t,
                             category: cat,
                             onTap: () => context.push('/subtasks/${t.id}'),
-                            onToggle: () => ref
-                                .read(taskRepositoryProvider)
-                                .toggleComplete(t.id, !t.isCompleted),
+                            onToggle: () async {
+                              await ref
+                                  .read(taskRepositoryProvider)
+                                  .toggleComplete(t.id, !t.isCompleted);
+                              ref.invalidate(tasksStreamProvider);
+                            },
                             onEdit: () => showDialog(
                               context: context,
                               builder: (_) => EditTaskDialog(task: t),

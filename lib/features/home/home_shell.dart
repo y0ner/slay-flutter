@@ -127,6 +127,10 @@ class _QuickAddDialogState extends ConsumerState<_QuickAddDialog> {
         categoryId: catId,
         reminder: _reminder,
       );
+      // Refrescar UI: realtime puede tardar ms, esto asegura feedback
+      // inmediato (cache local + lista visible).
+      ref.invalidate(tasksStreamProvider);
+      ref.invalidate(cachedTasksStreamProvider);
       // Si la tarea quedó con id local (no se pudo subir a Supabase),
       // persistir en cache para feedback inmediato en la UI.
       if (created.isLocal) {

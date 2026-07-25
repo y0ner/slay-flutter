@@ -98,6 +98,7 @@ class _EditTaskDialogState extends ConsumerState<EditTaskDialog> {
                           title: _ctrl.text.trim(),
                           reminder: _reminder,
                         );
+                    ref.invalidate(tasksStreamProvider);
                     if (mounted) Navigator.pop(context);
                   } catch (e) {
                     if (mounted) {

@@ -10,6 +10,7 @@ import '../../data/models/category.dart';
 import '../../data/models/task.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/task_repository.dart';
+import '../../notifications/local_notifications.dart';
 
 /// Preset configurable de duración. Las duraciones están en minutos.
 class PomodoroPreset {
@@ -74,6 +75,26 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
     duration: const Duration(seconds: 2),
   )..repeat(reverse: true);
 
+  // Paquete A: evita mostrar el diálogo de "tarea completada mid-session"
+  // dos veces si el stream emite varios eventos seguidos antes de que
+  // el user elija.
+  bool _midSessionDialogShowing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Paquete B: si la app se cerró con una sesión activa, le
+    // ofrecemos al user recuperarla (o descartarla) apenas entre al tab.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeOfferRestore();
+    });
+  }
+
+  // Paquete B: id fijo para la notificación del pomodoro activo. Si
+  // cambiamos de tarea sin pausar, cancelamos y reprogramamos con el
+  // mismo id — así no acumulamos notifs fantasma.
+  static const _sessionNotifId = 999999;
+
   @override
   void dispose() {
     _timer?.cancel();
@@ -81,7 +102,165 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
     // Asegurar que el wake lock quede liberado si el usuario navega
     // fuera durante un focus (Pomodoro es un tab del shell).
     WakelockPlus.disable();
+    // Paquete B: cancelar la notificación del fin de sesión. Si el
+    // usuario navega fuera sin pausar, la sesión sigue corriendo en
+    // memoria sólo hasta el dispose (el State muere). La persistencia
+    // permite recuperarla si vuelve. Pero la notif ya no aplica al
+    // momento de dispose — la reprogramaremos en initState/recuperar.
+    LocalNotifications.instance.cancel(_sessionNotifId);
     super.dispose();
+  }
+
+  // ── Paquete B: persistencia de la sesión + notificación ──
+
+  /// Guarda un snapshot del estado actual. Llamado en cada start y
+  /// pause para que si la app muere, sepamos retomar (o avisar al
+  /// user que la sesión expiró).
+  void _persistSession() {
+    PomodoroSessionPersist.save(PomodoroSessionSnapshot(
+      kind: _kind.name,
+      remainingSeconds: _remaining,
+      totalSeconds: _totalForKind,
+      startedAtMs: DateTime.now().millisecondsSinceEpoch,
+      taskId: _selectedTask?.id ?? '',
+      taskTitle: _selectedTask?.title ?? '',
+      presetLabel: _preset.label,
+      cycleIndex: _cycleIndex,
+      cyclesBeforeLong: _preset.cyclesBeforeLong,
+    ));
+  }
+
+  Future<void> _clearSession() async {
+    await PomodoroSessionPersist.clear();
+    await LocalNotifications.instance.cancel(_sessionNotifId);
+  }
+
+  /// Programa/agenda la notificación para el fin del timer. Si la app
+  /// queda en background al terminar, el usuario recibe aviso igual.
+  Future<void> _scheduleEndNotification() async {
+    final endAt = DateTime.now().add(Duration(seconds: _remaining));
+    // Cancelamos siempre antes de agendar para no acumular si el user
+    // pausó y resumió varias veces.
+    await LocalNotifications.instance.cancel(_sessionNotifId);
+    final kindLabel = switch (_kind) {
+      SessionKind.work => 'trabajo',
+      SessionKind.shortBreak => 'descanso corto',
+      SessionKind.longBreak => 'descanso largo',
+    };
+    final title = _selectedTask != null
+        ? '${_selectedTask!.title} — listo'
+        : 'Pomodoro listo';
+    final body = switch (_kind) {
+      SessionKind.work => 'Terminó tu sesión de $kindLabel.',
+      SessionKind.shortBreak => 'Volvé al trabajo.',
+      SessionKind.longBreak => 'Gran descanso listo, a darle.',
+    };
+    await LocalNotifications.instance.scheduleSessionEnd(
+      id: _sessionNotifId,
+      title: title,
+      body: body,
+      when: endAt,
+    );
+  }
+
+  /// En initState miramos si quedó una sesión guardada de un cierre
+  /// previo de la app. Si está vigente, dejamos que el user la retome.
+  void _maybeOfferRestore() {
+    PomodoroSessionPersist.load().then((snap) {
+      if (snap == null || !mounted) return;
+      final remaining = snap.remainingNow(DateTime.now());
+      // Si la sesión ya expiró hace más de 5 minutos, no la ofrecemos.
+      if (remaining < -300) {
+        PomodoroSessionPersist.clear();
+        return;
+      }
+      // Si el user cambió de día, no tiene sentido retomar.
+      final now = DateTime.now();
+      final wasToday = DateTime.fromMillisecondsSinceEpoch(snap.startedAtMs);
+      if (wasToday.day != now.day ||
+          wasToday.month != now.month ||
+          wasToday.year != now.year) {
+        PomodoroSessionPersist.clear();
+        return;
+      }
+      _showRestoreDialog(snap, remaining);
+    });
+  }
+
+  Future<void> _showRestoreDialog(
+      PomodoroSessionSnapshot snap, int remainingSec) async {
+    final mins = remainingSec ~/ 60;
+    final secs = remainingSec % 60;
+    final friendlyTime = remainingSec <= 0
+        ? 'expirada'
+        : (mins > 0
+            ? '$mins min ${secs > 0 ? '$secs s' : ''}'
+            : '$secs s');
+    final kindLabel = switch (snap.kind) {
+      'shortBreak' => 'descanso corto',
+      'longBreak' => 'descanso largo',
+      _ => 'trabajo',
+    };
+    final choice = await showDialog<_RestoreChoice>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        icon: const Icon(Icons.history),
+        title: const Text('Sesión guardada'),
+        content: Text(
+          'Tenías un $kindLabel en curso'
+          '${snap.taskTitle.isNotEmpty ? ' para "${snap.taskTitle}"' : ''}.\n'
+          'Quedaban $friendlyTime.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, _RestoreChoice.discard),
+            child: const Text('Descartar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, _RestoreChoice.restore),
+            child: const Text('Recuperar'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (choice == _RestoreChoice.restore) {
+      _restoreFrom(snap, remainingSec.clamp(0, snap.totalSeconds));
+    } else if (choice == _RestoreChoice.discard) {
+      await _clearSession();
+    }
+  }
+
+  void _restoreFrom(PomodoroSessionSnapshot snap, int remainingSec) {
+    final kind = SessionKind.values.firstWhere(
+      (k) => k.name == snap.kind,
+      orElse: () => SessionKind.work,
+    );
+    setState(() {
+      _kind = kind;
+      _remaining = remainingSec;
+      _cycleIndex = snap.cycleIndex;
+      // No retomamos automáticamente _running. El user debe tocar play
+      // (así no vuelve la app y de repente suena el timer). Pero
+      // dejamos la selección de tarea si la encontramos.
+    });
+    // Intentar recuperar la tarea seleccionada (puede haber sido borrada).
+    if (snap.taskId.isNotEmpty) {
+      ref.read(taskRepositoryProvider).getAll().then((all) {
+        if (!mounted) return;
+        final match = all.where((t) => t.id == snap.taskId).firstOrNull;
+        if (match != null) {
+          setState(() => _selectedTask = match);
+        } else {
+          // Tarea ya no existe — limpiamos el snapshot para no
+          // restaurarlo la próxima vez.
+          _clearSession();
+        }
+      });
+    } else {
+      _clearSession();
+    }
   }
 
   int get _totalForKind => switch (_kind) {
@@ -128,6 +307,10 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
       if (_kind == SessionKind.work) {
         WakelockPlus.enable();
       }
+      // Paquete B: persistimos snapshot + agendamos notificación para
+      // cuando termine el timer (si la app está en background).
+      _persistSession();
+      _scheduleEndNotification();
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
         setState(() {
@@ -137,6 +320,11 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
       });
     } else {
       WakelockPlus.disable();
+      // Paquete B: al pausar, actualizamos el snapshot con el remaining
+      // actual (startedAt = ahora, así si la app muere sabemos cuánto
+      // quedaba). Cancelamos la notif hasta que reanude.
+      _persistSession();
+      LocalNotifications.instance.cancel(_sessionNotifId);
     }
   }
 
@@ -148,6 +336,8 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
       _running = false;
       _remaining = _totalForKind;
     });
+    // Paquete B: reset = fin de la sesión actual.
+    _clearSession();
   }
 
   /// Salta al siguiente estado del ciclo (sin contar como completado).
@@ -160,6 +350,28 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
       _advanceKind(completed: false);
       _remaining = _totalForKind;
     });
+    // Paquete B: skip = fin de la sesión actual.
+    _clearSession();
+  }
+
+  /// Paquete C: agrega 5 minutos al remaining actual (funciona en
+  /// cualquier estado: work o break). Útil cuando el user siente que
+  /// necesita un poco más antes de parar.
+  void _extendSession() {
+    const extra = 5 * 60;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _remaining += extra;
+      // Si estaba pausado, no lo iniciamos — sólo actualizamos el total
+      // visible. Pero si lo aprieta estando pausado es raro; el botón
+      // sólo aparece cuando está running. Igual lo dejamos safe.
+      if (!_running) _running = true;
+    });
+    // Paquete B: reprogramamos el snapshot y la notificación para que
+    // reflejen los 5 min extra. Si está pausado, sólo actualizamos el
+    // snapshot (la notif se reagenda en el próximo toggle a running).
+    _persistSession();
+    if (_running) _scheduleEndNotification();
   }
 
   void _finishSession() {
@@ -167,6 +379,9 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
     HapticFeedback.heavyImpact();
     final wasWork = _kind == SessionKind.work;
     final taskAtFinish = _selectedTask;
+    // Paquete B: el timer terminó naturalmente → limpiamos snapshot y
+    // cancelamos la notif (ya no aplica).
+    _clearSession();
     _advanceKind(completed: wasWork);
     setState(() {
       _running = false;
@@ -212,31 +427,185 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
 
   Future<void> _maybeOfferComplete(Task task) async {
     final stats = ref.read(pomodoroStatsProvider);
-    final shouldComplete = stats.autoComplete
-        ? true
-        : await showDialog<bool>(
+    final autoComplete = stats.autoComplete;
+    final choice = autoComplete
+        ? _PostWorkChoice.complete
+        : await showDialog<_PostWorkChoice>(
             context: context,
             builder: (_) => AlertDialog(
               icon: Icon(Icons.task_alt,
                   color: Theme.of(context).colorScheme.primary),
               title: const Text('¡Pomodoro terminado!'),
-              content: Text('¿Marcar "${task.title}" como completada?'),
+              content: Text(
+                  '¿Qué hago con "${task.title}"?\n\n'
+                  '· Completar: marco la tarea como hecha\n'
+                  '· Seguir: descanso y vuelvo\n'
+                  '· Otra pomodoro ya: salto al próximo trabajo'),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context, false),
+                  onPressed: () =>
+                      Navigator.pop(context, _PostWorkChoice.skipBreak),
+                  child: const Text('Otra pomodoro ya'),
+                ),
+                TextButton(
+                  onPressed: () =>
+                      Navigator.pop(context, _PostWorkChoice.continueBreak),
                   child: const Text('Seguir'),
                 ),
                 FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
+                  onPressed: () =>
+                      Navigator.pop(context, _PostWorkChoice.complete),
                   child: const Text('Completar'),
                 ),
               ],
             ),
           ) ??
-            false;
-    if (!shouldComplete || !mounted) return;
-    await ref.read(taskRepositoryProvider).toggleComplete(task.id, true);
-    ref.invalidate(tasksStreamProvider);
+            _PostWorkChoice.continueBreak;
+
+    if (!mounted) return;
+    if (choice == _PostWorkChoice.complete) {
+      await ref.read(taskRepositoryProvider).toggleComplete(task.id, true);
+      ref.invalidate(tasksStreamProvider);
+    } else if (choice == _PostWorkChoice.skipBreak) {
+      // Paquete C: saltar el break y arrancar la próxima sesión de
+      // trabajo al toque. _advanceKind ya nos dejó en shortBreak; lo
+      // pisamos a work y reseteamos el remaining.
+      setState(() {
+        _kind = SessionKind.work;
+        _remaining = _totalForKind;
+      });
+      // Pequeño feedback háptico y toast para que se note el salto.
+      HapticFeedback.selectionClick();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Break saltado — al próximo trabajo'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+    // _PostWorkChoice.continueBreak no hace nada extra: dejamos que el
+    // _advanceKind siga su curso (ya pasamos a shortBreak en
+    // _finishSession).
+  }
+
+  // ── Paquete A: lifecycle de tarea mid-session ────────────
+
+  /// Callback del `ref.listen(tasksStreamProvider)`. Detecta:
+  /// - tarea eliminada: limpiamos selección silenciosamente
+  /// - tarea completada mientras corre: pausamos y preguntamos al user
+  Task? _findCurrent(String id, List<Task> all) {
+    for (final t in all) {
+      if (t.id == id) return t;
+    }
+    return null;
+  }
+
+  void _onTasksChanged(List<Task> all) {
+    final selected = _selectedTask;
+    if (selected == null) return;
+    final current = _findCurrent(selected.id, all);
+    if (current == null) {
+      // La tarea fue eliminada (en este u otro dispositivo).
+      if (!_running) {
+        setState(() => _selectedTask = null);
+        return;
+      }
+      // Si está corriendo: pausamos, limpiamos y avisamos.
+      _timer?.cancel();
+      setState(() {
+        _running = false;
+        _selectedTask = null;
+        _remaining = _totalForKind;
+      });
+      WakelockPlus.disable();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La tarea fue eliminada — sesión reiniciada'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } else if (current.isCompleted && !selected.isCompleted) {
+      // Marcaron como hecha en otro lado (Mi Día, Tareas, etc).
+      if (_midSessionDialogShowing) return;
+      _handleCompletedMidSession(current);
+    }
+  }
+
+  Future<void> _handleCompletedMidSession(Task current) async {
+    _midSessionDialogShowing = true;
+    final wasRunning = _running;
+    if (wasRunning) {
+      // Pausamos sin disparar haptic ni feedback (lo hacemos acá abajo).
+      _timer?.cancel();
+      WakelockPlus.disable();
+      setState(() {
+        _running = false;
+        _remaining = _totalForKind;
+      });
+    }
+    if (!mounted) {
+      _midSessionDialogShowing = false;
+      return;
+    }
+    final choice = await showDialog<_MidSessionChoice>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        icon: Icon(Icons.task_alt,
+            color: Theme.of(context).colorScheme.primary),
+        title: const Text('¡Tarea completada!'),
+        content: Text(
+            '"${current.title}" se marcó como hecha desde otro lado. ¿Qué hago con el timer?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, _MidSessionChoice.stop),
+            child: const Text('Detener'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, _MidSessionChoice.change),
+            child: const Text('Cambiar tarea'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, _MidSessionChoice.keep),
+            child: const Text('Seguir'),
+          ),
+        ],
+      ),
+    );
+    _midSessionDialogShowing = false;
+    if (!mounted) return;
+    switch (choice) {
+      case _MidSessionChoice.keep:
+        // Actualizamos al modelo "completado" y resumimos si estaba corriendo.
+        setState(() => _selectedTask = current);
+        if (wasRunning) {
+          HapticFeedback.selectionClick();
+          setState(() => _running = true);
+          if (_kind == SessionKind.work) WakelockPlus.enable();
+          _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+            if (!mounted) return;
+            setState(() {
+              _remaining -= 1;
+              if (_remaining <= 0) _finishSession();
+            });
+          });
+        }
+        break;
+      case _MidSessionChoice.change:
+        setState(() => _selectedTask = null);
+        _pickTask();
+        break;
+      case _MidSessionChoice.stop:
+        _reset();
+        break;
+      case null:
+        // No se eligió nada (barrierDismissible:false evita esto normalmente,
+        // pero por las dudas dejamos el timer pausado).
+        break;
+    }
   }
 
   void _advanceKind({required bool completed}) {
@@ -306,6 +675,13 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Paquete A: detectar cambios en la tarea seleccionada mientras
+    // corría la sesión (completada o eliminada en otro lugar). Usamos
+    // listen (no watch) para no rebuild por cada cambio irrelevante.
+    ref.listen<AsyncValue<List<Task>>>(tasksStreamProvider, (prev, next) {
+      next.whenData((all) => _onTasksChanged(all));
+    });
+
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final progress =
@@ -523,6 +899,24 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                   ),
                 ],
               ),
+              // Paquete C: chip "+5 min" sólo mientras corre, para
+              // extender la sesión actual sin tener que esperar a que
+              // termine (caso típico: "necesito un poco más").
+              if (_running)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: ActionChip(
+                    avatar: Icon(Icons.add, size: 16, color: accent),
+                    label: const Text('+5 min'),
+                    labelStyle: TextStyle(
+                      color: accent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    side: BorderSide(color: accent.withValues(alpha: 0.4)),
+                    backgroundColor: accent.withValues(alpha: 0.08),
+                    onPressed: _extendSession,
+                  ),
+                ),
               const SizedBox(height: 8),
 
               // ── Pick task ───────────────────────────────
@@ -747,7 +1141,7 @@ class _PlayPauseButton extends StatelessWidget {
 /// Renderiza un sheet con backdrop scrim al tope de la pantalla. Cuando
 /// el State del Pomodoro se dispone (porque GoRouter reemplazó la ruta
 /// interna al cambiar de tab), el overlay se va con él automáticamente.
-class _TaskPickerOverlay extends StatefulWidget {
+class _TaskPickerOverlay extends ConsumerStatefulWidget {
   const _TaskPickerOverlay({
     required this.tasks,
     required this.categories,
@@ -760,11 +1154,36 @@ class _TaskPickerOverlay extends StatefulWidget {
   final void Function(_TaskPickResult) onResult;
 
   @override
-  State<_TaskPickerOverlay> createState() => _TaskPickerOverlayState();
+  ConsumerState<_TaskPickerOverlay> createState() => _TaskPickerOverlayState();
 }
 
-class _TaskPickerOverlayState extends State<_TaskPickerOverlay> {
+class _TaskPickerOverlayState extends ConsumerState<_TaskPickerOverlay> {
   String _filter = '';
+  bool _creating = false;
+
+  /// Abre un mini diálogo para crear una tarea rápida (sólo título +
+  /// categoría). Devuelve la Task creada o null si el user canceló.
+  Future<Task?> _quickCreate() async {
+    setState(() => _creating = true);
+    final created = await showDialog<Task>(
+      context: context,
+      builder: (_) => _QuickCreateTaskDialog(
+        categories: widget.categories,
+      ),
+    );
+    if (!mounted) return null;
+    setState(() => _creating = false);
+    return created;
+  }
+
+  Future<void> _onCreatePressed() async {
+    final created = await _quickCreate();
+    if (!mounted || created == null) return;
+    // Invalidar el stream para que el provider refresque y la nueva
+    // tarea aparezca si la UI está observando.
+    ref.invalidate(tasksStreamProvider);
+    widget.onResult(_TaskPickResult.task(created));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -859,12 +1278,36 @@ class _TaskPickerOverlayState extends State<_TaskPickerOverlay> {
                       child: filtered.isEmpty
                           ? Padding(
                               padding: const EdgeInsets.all(32),
-                              child: Text(
-                                widget.tasks.isEmpty
-                                    ? 'No hay tareas pendientes'
-                                    : 'Sin coincidencias',
-                                style: TextStyle(
-                                    color: scheme.onSurfaceVariant),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    widget.tasks.isEmpty
+                                        ? 'No hay tareas pendientes'
+                                        : 'Sin coincidencias',
+                                    style: TextStyle(
+                                        color: scheme.onSurfaceVariant),
+                                  ),
+                                  if (widget.tasks.isEmpty) ...[
+                                    const SizedBox(height: 12),
+                                    FilledButton.icon(
+                                      onPressed:
+                                          _creating ? null : _onCreatePressed,
+                                      icon: _creating
+                                          ? const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child:
+                                                  CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Icon(Icons.add),
+                                      label: const Text(
+                                          'Crear tarea rápida'),
+                                    ),
+                                  ],
+                                ],
                               ),
                             )
                           : ListView.builder(
@@ -954,6 +1397,19 @@ class _PresetPickResult {
   final PomodoroPreset? preset;
   final bool? autoComplete;
 }
+
+/// Paquete A: opciones cuando la tarea seleccionada se marca como
+/// completada mientras corre un pomodoro.
+enum _MidSessionChoice { keep, change, stop }
+
+/// Paquete B: opciones del diálogo de recuperar sesión al reabrir la app.
+enum _RestoreChoice { restore, discard }
+
+/// Paquete C: opciones del diálogo post-pomodoro cuando se completa
+/// un trabajo. `complete` = marcar la tarea hecha. `continueBreak` =
+/// tomar el descanso corto/largo correspondiente. `skipBreak` =
+/// saltar al próximo trabajo sin break.
+enum _PostWorkChoice { complete, continueBreak, skipBreak }
 
 /// Overlay in-screen de configuración del Pomodoro (preset + toggle
 /// auto-completar). Misma justificación que _TaskPickerOverlay: no usa
@@ -1259,6 +1715,114 @@ class _CustomFields extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Paquete A: mini-diálogo para crear una tarea rápida desde el picker
+/// del Pomodoro cuando no hay tareas pendientes. Sólo pide título y
+/// categoría. La tarea queda creada y se devuelve al caller para que
+/// la use como `_selectedTask`.
+class _QuickCreateTaskDialog extends ConsumerStatefulWidget {
+  const _QuickCreateTaskDialog({required this.categories});
+  final List<Category> categories;
+
+  @override
+  ConsumerState<_QuickCreateTaskDialog> createState() =>
+      _QuickCreateTaskDialogState();
+}
+
+class _QuickCreateTaskDialogState
+    extends ConsumerState<_QuickCreateTaskDialog> {
+  final _ctrl = TextEditingController();
+  String? _categoryId;
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final title = _ctrl.text.trim();
+    if (title.isEmpty) return;
+    final cats = widget.categories;
+    if (cats.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Crea primero una categoría')),
+      );
+      return;
+    }
+    final catId = _categoryId ?? cats.first.id;
+    setState(() => _saving = true);
+    try {
+      final created = await ref.read(taskRepositoryProvider).create(
+            title: title,
+            categoryId: catId,
+          );
+      // Si quedó local (sin red), persistir en cache para feedback inmediato.
+      if (created.isLocal) {
+        await ref.read(taskRepositoryProvider).upsertLocal(created);
+      }
+      ref.invalidate(tasksStreamProvider);
+      ref.invalidate(cachedTasksStreamProvider);
+      if (mounted) Navigator.of(context).pop(created);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cats = widget.categories;
+    return AlertDialog(
+      title: const Text('Tarea rápida'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Título'),
+            onSubmitted: (_) => _save(),
+          ),
+          const SizedBox(height: 12),
+          if (cats.isEmpty)
+            const Text('Crea primero una categoría')
+          else
+            DropdownButtonFormField<String>(
+              value: _categoryId ?? cats.first.id,
+              decoration: const InputDecoration(labelText: 'Categoría'),
+              items: [
+                for (final c in cats)
+                  DropdownMenuItem(value: c.id, child: Text(c.name)),
+              ],
+              onChanged: (v) => setState(() => _categoryId = v),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Crear'),
+        ),
+      ],
     );
   }
 }

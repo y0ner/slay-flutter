@@ -97,4 +97,51 @@ class LocalNotifications {
 
   Future<void> cancel(int id) => _plugin.cancel(id);
   Future<void> cancelAll() => _plugin.cancelAll();
+
+  /// Programa una notificación para el fin de un pomodoro. Si el
+  /// momento ya pasó, devuelve false sin agendar.
+  ///
+  /// Usa un canal separado ("Pomodoro") para no mezclarse con
+  /// recordatorios. El id debe ser único por sesión activa (la app
+  /// usa un id estable derivado del taskId para poder cancelarlo).
+  Future<bool> scheduleSessionEnd({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime when,
+  }) async {
+    if (!_initialized) await init();
+    if (when.isBefore(DateTime.now())) return false;
+
+    final scheduled = tz.TZDateTime.from(when, tz.local);
+
+    const androidDetails = AndroidNotificationDetails(
+      'slay_pomodoro',
+      'Pomodoro',
+      channelDescription: 'Avisos cuando termina un pomodoro.',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+    const details = NotificationDetails(
+      android: androidDetails,
+      linux: LinuxNotificationDetails(),
+    );
+
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        scheduled,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('scheduleSessionEnd falló: $e');
+      return false;
+    }
+  }
 }

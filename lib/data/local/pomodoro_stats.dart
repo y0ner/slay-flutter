@@ -296,3 +296,98 @@ class PomodoroCustomNotifier extends Notifier<PomodoroCustomConfig> {
 final pomodoroCustomProvider =
     NotifierProvider<PomodoroCustomNotifier, PomodoroCustomConfig>(
         PomodoroCustomNotifier.new);
+
+// ── Persistencia del timer en curso (Paquete B) ──────────
+
+/// Snapshot del estado del timer para sobrevivir cierres de la app.
+///
+/// Sólo persiste UNA sesión a la vez (no histórico). Si la app se mata
+/// durante un pomodoro, al reabrir ofrece "Recuperar" o "Descartar".
+class PomodoroSessionSnapshot {
+  const PomodoroSessionSnapshot({
+    required this.kind, // 'work' | 'shortBreak' | 'longBreak'
+    required this.remainingSeconds,
+    required this.totalSeconds,
+    required this.startedAtMs,
+    required this.taskId,
+    required this.taskTitle,
+    required this.presetLabel,
+    required this.cycleIndex,
+    required this.cyclesBeforeLong,
+  });
+
+  final String kind;
+  final int remainingSeconds;
+  final int totalSeconds;
+  final int startedAtMs;
+  final String taskId;
+  final String taskTitle;
+  final String presetLabel;
+  final int cycleIndex;
+  final int cyclesBeforeLong;
+
+  Map<String, dynamic> toJson() => {
+        'kind': kind,
+        'remaining': remainingSeconds,
+        'total': totalSeconds,
+        'startedAt': startedAtMs,
+        'taskId': taskId,
+        'taskTitle': taskTitle,
+        'preset': presetLabel,
+        'cycle': cycleIndex,
+        'cyclesBeforeLong': cyclesBeforeLong,
+      };
+
+  static PomodoroSessionSnapshot? fromJson(String raw) {
+    try {
+      final m = json.decode(raw) as Map<String, dynamic>;
+      return PomodoroSessionSnapshot(
+        kind: m['kind'] as String,
+        remainingSeconds: (m['remaining'] as num).toInt(),
+        totalSeconds: (m['total'] as num).toInt(),
+        startedAtMs: (m['startedAt'] as num).toInt(),
+        taskId: m['taskId'] as String,
+        taskTitle: m['taskTitle'] as String,
+        presetLabel: m['preset'] as String,
+        cycleIndex: (m['cycle'] as num).toInt(),
+        cyclesBeforeLong: (m['cyclesBeforeLong'] as num).toInt(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Cuántos segundos pasaron desde que se guardó el snapshot.
+  /// Si el delta es mayor que el total, la sesión ya expiró.
+  int elapsedSeconds(DateTime now) {
+    final started = DateTime.fromMillisecondsSinceEpoch(startedAtMs);
+    return now.difference(started).inSeconds;
+  }
+
+  /// Lo que le quedaba REAL al usuario si reabre la app ahora. Si es
+  /// <= 0 la sesión ya terminó y se debe descartar.
+  int remainingNow(DateTime now) {
+    return remainingSeconds - elapsedSeconds(now);
+  }
+}
+
+class PomodoroSessionPersist {
+  static const _key = 'pomodoro.active_session';
+
+  static Future<void> save(PomodoroSessionSnapshot snap) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_key, json.encode(snap.toJson()));
+  }
+
+  static Future<void> clear() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_key);
+  }
+
+  static Future<PomodoroSessionSnapshot?> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key);
+    if (raw == null || raw.isEmpty) return null;
+    return PomodoroSessionSnapshot.fromJson(raw);
+  }
+}

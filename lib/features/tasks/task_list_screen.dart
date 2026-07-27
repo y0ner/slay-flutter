@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/models/category.dart';
 import '../../data/repositories/category_repository.dart';
@@ -49,10 +48,9 @@ class TaskListScreen extends ConsumerWidget {
                 ),
                 title: Text(cat.name),
               ),
-              floatingActionButton: FloatingActionButton(
-                onPressed: () => _addTask(context, ref, cat),
-                child: const Icon(Icons.add),
-              ),
+              // FAB contextual lo provee HomeShell (ruta /tasks/:id →
+              // "Nueva tarea en esta categoría" con el categoryId
+              // pre-seleccionado).
               body: list.isEmpty
                   ? const Center(child: Text('Sin tareas en esta categoría'))
                   : ListView.builder(
@@ -87,69 +85,4 @@ class TaskListScreen extends ConsumerWidget {
       },
     );
   }
-
-  void _addTask(BuildContext context, WidgetRef ref, Category cat) {
-    final ctrl = TextEditingController();
-    DateTime? reminder;
-    showDialog(
-      context: context,
-      builder: (_) => StatefulBuilder(builder: (ctx, setState) {
-        return AlertDialog(
-          title: Text('Nueva tarea en ${cat.name}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: ctrl, autofocus: true,
-                decoration: const InputDecoration(labelText: 'Título')),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(reminder == null
-                        ? 'Sin recordatorio'
-                        : 'Recordatorio: ${DateFormat('dd/MM/yyyy HH:mm').format(reminder!)}'),
-                  ),
-                  TextButton(
-                    onPressed: () async {
-                      final now = DateTime.now();
-                      final d = await showDatePicker(
-                        context: ctx, firstDate: now,
-                        lastDate: now.add(const Duration(days: 365)),
-                        initialDate: now,
-                      );
-                      if (d == null) return;
-                      if (!ctx.mounted) return;
-                      final t = await showTimePicker(
-                        context: ctx, initialTime: TimeOfDay.now());
-                      if (t == null) return;
-                      setState(() => reminder = DateTime(
-                          d.year, d.month, d.day, t.hour, t.minute));
-                    },
-                    child: const Text('Elegir'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-            FilledButton(
-              onPressed: () async {
-                if (ctrl.text.trim().isEmpty) return;
-                await ref.read(taskRepositoryProvider).create(
-                  title: ctrl.text.trim(),
-                  categoryId: cat.id,
-                  reminder: reminder,
-                );
-                if (ctx.mounted) Navigator.pop(ctx);
-                ref.invalidate(tasksStreamProvider);
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      }),
-    );
-  }
-
 }

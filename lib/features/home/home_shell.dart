@@ -1,14 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/slay_theme.dart';
+import '../../data/models/category.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/task_repository.dart';
 import '../../data/sync/sync_service.dart';
+import '../tasks/category_editor_dialog.dart';
 
 /// Shell que contiene el BottomNavigationBar. El `child` que recibe
 /// es la pantalla actual (gestionada por GoRouter).
+///
+/// Feature #10: el FAB del shell es **contextual** según la ruta:
+/// - `/`             → Nueva tarea (pre-carga reminder = hoy)
+/// - `/calendar`     → Nueva tarea (mismo diálogo, sin reminder default)
+/// - `/tasks`        → Nueva categoría
+/// - `/tasks/:id`    → Nueva tarea en esa categoría
+/// - `/pomodoro`     → sin FAB (el picker se usa para elegir tarea)
+/// - `/settings`     → sin FAB
+///
+/// Esto reemplaza los FABs hardcodeados en CategoryListScreen y
+/// TaskListScreen — el shell es ahora la única fuente del FAB
+/// principal de la app, así es consistente de tab en tab.
 class HomeShell extends ConsumerWidget {
   const HomeShell({super.key, required this.child, required this.currentLocation});
 
@@ -36,6 +51,7 @@ class HomeShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final fab = _fabForRoute(context);
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(gradient: slayBackgroundGradient(context)),
@@ -53,24 +69,73 @@ class HomeShell extends ConsumerWidget {
             ),
         ],
       ),
-      floatingActionButton: _currentIndex == 0
-          ? FloatingActionButton(
-              onPressed: () => _quickAdd(context, ref),
-              child: const Icon(Icons.add),
-            )
-          : null,
+      floatingActionButton: fab == null
+          ? null
+          : FloatingActionButton(
+              tooltip: fab.tooltip,
+              onPressed: () {
+                HapticFeedback.selectionClick();
+                fab.onPressed();
+              },
+              child: Icon(fab.icon),
+            ),
     );
   }
 
-  void _quickAdd(BuildContext context, WidgetRef ref) {
-    // Si estamos en Mi Día, pre-cargamos el recordatorio a hoy para que
-    // la tarea aparezca automáticamente en la lista. El usuario puede
-    // cambiarlo o limpiarlo desde el diálogo.
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+  /// Devuelve la spec del FAB para la ruta actual. `ctx` se pasa
+  /// explícitamente porque las callbacks de los FAB necesitan un
+  /// BuildContext (no tenemos uno a nivel de clase en ConsumerWidget).
+  _FabSpec? _fabForRoute(BuildContext ctx) {
+    if (currentLocation == '/') {
+      return _FabSpec(
+        icon: Icons.add,
+        tooltip: 'Nueva tarea',
+        onPressed: () => _quickAddTask(ctx, reminderToday: true),
+      );
+    }
+    if (currentLocation == '/calendar') {
+      return _FabSpec(
+        icon: Icons.add,
+        tooltip: 'Nueva tarea',
+        onPressed: () => _quickAddTask(ctx, reminderToday: false),
+      );
+    }
+    if (currentLocation == '/tasks') {
+      return _FabSpec(
+        icon: Icons.create_new_folder_outlined,
+        tooltip: 'Nueva categoría',
+        onPressed: () => _newCategory(ctx),
+      );
+    }
+    if (currentLocation.startsWith('/tasks/')) {
+      final catId = currentLocation.substring('/tasks/'.length);
+      return _FabSpec(
+        icon: Icons.add,
+        tooltip: 'Nueva tarea en esta categoría',
+        onPressed: () => _quickAddTask(ctx, categoryId: catId),
+      );
+    }
+    return null;
+  }
+
+  void _quickAddTask(BuildContext ctx,
+      {bool reminderToday = false, String? categoryId}) {
+    final initialReminder = reminderToday
+        ? DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)
+        : null;
     showDialog(
-      context: context,
-      builder: (_) => _QuickAddDialog(initialReminder: today),
+      context: ctx,
+      builder: (_) => _QuickAddDialog(
+        initialReminder: initialReminder,
+        initialCategoryId: categoryId,
+      ),
+    );
+  }
+
+  void _newCategory(BuildContext ctx) {
+    showDialog(
+      context: ctx,
+      builder: (_) => const CategoryEditorDialog(),
     );
   }
 }
@@ -83,9 +148,25 @@ class _TabSpec {
   const _TabSpec(this.path, this.icon, this.iconSelected, this.label);
 }
 
+class _FabSpec {
+  const _FabSpec({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+}
+
 class _QuickAddDialog extends ConsumerStatefulWidget {
-  const _QuickAddDialog({this.initialReminder});
+  const _QuickAddDialog({this.initialReminder, this.initialCategoryId});
   final DateTime? initialReminder;
+
+  /// Si viene del shell con `/tasks/:id`, la categoría ya está fijada
+  /// y el dropdown se muestra deshabilitado.
+  final String? initialCategoryId;
+
   @override
   ConsumerState<_QuickAddDialog> createState() => _QuickAddDialogState();
 }
@@ -100,6 +181,7 @@ class _QuickAddDialogState extends ConsumerState<_QuickAddDialog> {
   void initState() {
     super.initState();
     _reminder = widget.initialReminder;
+    _categoryId = widget.initialCategoryId;
   }
 
   @override
@@ -108,16 +190,16 @@ class _QuickAddDialogState extends ConsumerState<_QuickAddDialog> {
     super.dispose();
   }
 
-  Future<void> _save() async {
+  Future<void> _save(List categories) async {
     if (_ctrl.text.trim().isEmpty) return;
     setState(() => _saving = true);
     try {
       final repo = ref.read(taskRepositoryProvider);
-      // Leer categorías del cache local — antes hacía `cats.getAll()`
-      // directo contra Supabase, lo que fallaba offline ANTES de encolar.
-      final cachedCats = ref.read(cachedCategoriesStreamProvider);
-      final list = cachedCats.value ?? const [];
-      final catId = _categoryId ?? (list.isNotEmpty ? list.first.id : '');
+      // Categoría: si vino fijada desde el shell (ruta /tasks/:id),
+      // usarla; si no, la seleccionada en el dropdown o la primera.
+      final catId = widget.initialCategoryId ??
+          _categoryId ??
+          (categories.isNotEmpty ? categories.first.id : '');
       if (catId.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -178,8 +260,21 @@ class _QuickAddDialogState extends ConsumerState<_QuickAddDialog> {
       data: (l) => l,
       orElse: () => const [],
     );
+    // Si la categoría fue fijada por el shell (ruta /tasks/:id),
+    // la buscamos para mostrar su nombre en el dropdown deshabilitado.
+    Category? fixedCategory;
+    if (widget.initialCategoryId != null) {
+      for (final c in list) {
+        if (c.id == widget.initialCategoryId) {
+          fixedCategory = c;
+          break;
+        }
+      }
+    }
     return AlertDialog(
-      title: const Text('Nueva tarea'),
+      title: Text(fixedCategory != null
+          ? 'Nueva tarea en ${fixedCategory.name}'
+          : 'Nueva tarea'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -188,12 +283,28 @@ class _QuickAddDialogState extends ConsumerState<_QuickAddDialog> {
               controller: _ctrl,
               decoration: const InputDecoration(labelText: 'Título'),
               autofocus: true,
+              onSubmitted: (_) => _save(list),
             ),
             const SizedBox(height: 12),
             if (list.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text('Crea primero una categoría'),
+              )
+            else if (fixedCategory != null)
+              // Categoría fijada por la ruta: la mostramos como
+              // dropdown deshabilitado para que el user sepa dónde
+              // va a parar la tarea.
+              DropdownButtonFormField<String>(
+                value: fixedCategory.id,
+                decoration: const InputDecoration(labelText: 'Categoría'),
+                items: [
+                  DropdownMenuItem(
+                    value: fixedCategory.id,
+                    child: Text(fixedCategory.name),
+                  ),
+                ],
+                onChanged: null,
               )
             else
               DropdownButtonFormField<String>(
@@ -248,7 +359,7 @@ class _QuickAddDialogState extends ConsumerState<_QuickAddDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
         FilledButton(
-          onPressed: _saving ? null : _save,
+          onPressed: _saving ? null : () => _save(list),
           child: const Text('Guardar'),
         ),
       ],

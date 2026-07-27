@@ -21,12 +21,19 @@ class PomodoroPreset {
   final int longBreak;
   final int cyclesBeforeLong;
 
+  bool get isCustom => label == 'Personalizado';
+
   static const standard =
       PomodoroPreset('Estándar', 25, 5, 15, 4);
   static const short = PomodoroPreset('Corto', 15, 3, 10, 4);
   static const long = PomodoroPreset('Largo', 50, 10, 20, 4);
 
-  static const all = [standard, short, long];
+  /// Sentinel de "Personalizado". Los valores reales los lee el overlay
+  /// desde `pomodoroCustomProvider`. Usar como `label: 'Personalizado'`
+  /// para detectarlo en `isCustom`.
+  static const customSentinel = PomodoroPreset('Personalizado', 0, 0, 0, 4);
+
+  static const builtIn = [standard, short, long];
 }
 
 /// Tipo de sesión activa. Determina el color del anillo y la duración.
@@ -913,7 +920,7 @@ class _PresetPickResult {
 /// Overlay in-screen de configuración del Pomodoro (preset + toggle
 /// auto-completar). Misma justificación que _TaskPickerOverlay: no usa
 /// showModalBottomSheet para que se cierre al cambiar de tab.
-class _PresetOverlay extends StatefulWidget {
+class _PresetOverlay extends ConsumerStatefulWidget {
   const _PresetOverlay({
     required this.preset,
     required this.autoComplete,
@@ -924,12 +931,77 @@ class _PresetOverlay extends StatefulWidget {
   final void Function(_PresetPickResult) onResult;
 
   @override
-  State<_PresetOverlay> createState() => _PresetOverlayState();
+  ConsumerState<_PresetOverlay> createState() => _PresetOverlayState();
 }
 
-class _PresetOverlayState extends State<_PresetOverlay> {
+class _PresetOverlayState extends ConsumerState<_PresetOverlay> {
   late PomodoroPreset _selected = widget.preset;
   late bool _auto = widget.autoComplete;
+  late TextEditingController _workCtrl;
+  late TextEditingController _shortCtrl;
+  late TextEditingController _longCtrl;
+  late TextEditingController _cyclesCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    // Hidratamos desde el provider (puede aún no tener datos).
+    final cfg = ref.read(pomodoroCustomProvider);
+    // Si el preset actual es el custom sentinel, lo mantenemos seleccionado
+    // con los valores del provider.
+    _workCtrl = TextEditingController(text: cfg.work.toString());
+    _shortCtrl = TextEditingController(text: cfg.shortBreak.toString());
+    _longCtrl = TextEditingController(text: cfg.longBreak.toString());
+    _cyclesCtrl = TextEditingController(text: cfg.cyclesBeforeLong.toString());
+  }
+
+  @override
+  void dispose() {
+    _workCtrl.dispose();
+    _shortCtrl.dispose();
+    _longCtrl.dispose();
+    _cyclesCtrl.dispose();
+    super.dispose();
+  }
+
+  void _selectCustom() {
+    setState(() {
+      _selected = PomodoroPreset.customSentinel;
+    });
+  }
+
+  void _apply() {
+    final isCustom = _selected.isCustom;
+    if (isCustom) {
+      final work = int.tryParse(_workCtrl.text) ?? 30;
+      final shortBreak = int.tryParse(_shortCtrl.text) ?? 5;
+      final longBreak = int.tryParse(_longCtrl.text) ?? 15;
+      final cycles = int.tryParse(_cyclesCtrl.text) ?? 4;
+      final config = PomodoroCustomConfig(
+        work: work.clamp(1, 180),
+        shortBreak: shortBreak.clamp(1, 60),
+        longBreak: longBreak.clamp(1, 90),
+        cyclesBeforeLong: cycles.clamp(2, 10),
+      );
+      // Persistir y construir el preset con los valores ya saneados.
+      ref.read(pomodoroCustomProvider.notifier).save(config);
+      widget.onResult(_PresetPickResult(
+        preset: PomodoroPreset(
+          'Personalizado',
+          config.work,
+          config.shortBreak,
+          config.longBreak,
+          config.cyclesBeforeLong,
+        ),
+        autoComplete: _auto,
+      ));
+    } else {
+      widget.onResult(_PresetPickResult(
+        preset: _selected,
+        autoComplete: _auto,
+      ));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -953,7 +1025,7 @@ class _PresetOverlayState extends State<_PresetOverlay> {
               elevation: 8,
               borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(24)),
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -990,18 +1062,40 @@ class _PresetOverlayState extends State<_PresetOverlay> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    for (final p in PomodoroPreset.all)
+                    for (final p in PomodoroPreset.builtIn)
                       RadioListTile<PomodoroPreset>(
                         title: Text(p.label),
                         subtitle: Text(
                             '${p.work}min trabajo · ${p.shortBreak}min descanso · ${p.longBreak}min largo'),
                         value: p,
-                        groupValue: _selected,
+                        groupValue:
+                            _selected.isCustom ? null : _selected,
                         onChanged: (v) {
                           if (v == null) return;
                           setState(() => _selected = v);
                         },
                       ),
+                    RadioListTile<PomodoroPreset>(
+                      title: const Text('Personalizado'),
+                      subtitle: Text(
+                        _selected.isCustom
+                            ? 'Configurá las duraciones abajo'
+                            : 'Configurar manualmente',
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                      secondary: Icon(Icons.tune, color: scheme.primary),
+                      value: PomodoroPreset.customSentinel,
+                      groupValue: _selected.isCustom
+                          ? PomodoroPreset.customSentinel
+                          : _selected,
+                      onChanged: (_) => _selectCustom(),
+                    ),
+                    if (_selected.isCustom) _CustomFields(
+                      workCtrl: _workCtrl,
+                      shortCtrl: _shortCtrl,
+                      longCtrl: _longCtrl,
+                      cyclesCtrl: _cyclesCtrl,
+                    ),
                     const Divider(height: 1),
                     SwitchListTile(
                       title: const Text('Auto-completar tarea'),
@@ -1015,10 +1109,7 @@ class _PresetOverlayState extends State<_PresetOverlay> {
                       padding:
                           const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                       child: FilledButton(
-                        onPressed: () => widget.onResult(_PresetPickResult(
-                          preset: _selected,
-                          autoComplete: _auto,
-                        )),
+                        onPressed: _apply,
                         child: const Text('Aplicar'),
                       ),
                     ),
@@ -1036,3 +1127,100 @@ class _PresetOverlayState extends State<_PresetOverlay> {
 
 Color _parseColor(String h) =>
     Color(int.parse(h.replaceFirst('#', '0xFF')));
+
+/// Campos editables del preset Personalizado: trabajo, descanso corto,
+/// descanso largo, ciclos antes del descanso largo. Validación
+/// soft (clamp) en _apply del _PresetOverlayState.
+class _CustomFields extends StatelessWidget {
+  const _CustomFields({
+    required this.workCtrl,
+    required this.shortCtrl,
+    required this.longCtrl,
+    required this.cyclesCtrl,
+  });
+  final TextEditingController workCtrl;
+  final TextEditingController shortCtrl;
+  final TextEditingController longCtrl;
+  final TextEditingController cyclesCtrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    InputDecoration deco(String label, String hint) => InputDecoration(
+          labelText: label,
+          hintText: hint,
+          isDense: true,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          suffixText: 'min',
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer.withValues(alpha: 0.25),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: workCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: deco('Trabajo', '25'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: shortCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: deco('Descanso', '5'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: longCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: deco('Descanso largo', '15'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: cyclesCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Ciclos',
+                      hintText: '4',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Trabajo/descanso en minutos. Ciclos: pomodoros entre descansos largos.',
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

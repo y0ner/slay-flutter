@@ -51,7 +51,11 @@ class CompletedTasksScreen extends ConsumerWidget {
       });
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      // Estamos fuera del shell, así que el fondo no viene del
+      // `slayBackgroundGradient`. Usamos el del theme para mantener
+      // coherencia con el resto de la app (y no terminar con un
+      // body blanco + cards oscuras).
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -89,7 +93,7 @@ class _CompletedTaskTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final dateLabel = _formatDate(task.date);
     return Material(
-      color: Theme.of(context).cardColor,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(12),
       child: ListTile(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

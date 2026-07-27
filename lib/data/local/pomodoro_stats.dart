@@ -5,12 +5,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Estado de las estadísticas persistidas del Pomodoro.
 ///
-/// - `today`: contador que se resetea automáticamente cuando cambia
-///   la fecha (comparado contra `todayDate`).
-/// - `perTask`: mapa `taskId → cantidad` para mostrar en TaskCard y
-///   en futuras estadísticas por tarea.
-/// - `autoComplete`: preferencia para auto-marcar la tarea como
-///   completada al terminar el pomodoro de trabajo (sin diálogo).
+/// - `today`: contador diario que se resetea automáticamente cuando
+///   cambia la fecha (comparado contra `todayDate`).
+/// - `perTask`: mapa `taskId → cantidad` para mostrar en TaskCard.
+/// - `history`: lista de fechas (yyyy-MM-dd) en las que se completó
+///   al menos un pomodoro. Usada para calcular la racha.
+/// - `perTaskHistory`: mapa `taskId → [timestamps]` de cada sesión.
+///   Permite mostrar historial por tarea y "hace cuánto fue la
+///   última sesión".
+/// - `autoComplete`: preferencia para auto-marcar la tarea.
 ///
 /// Todo se persiste en SharedPreferences; sobrevive cierres de app.
 class PomodoroStatsState {
@@ -18,6 +21,8 @@ class PomodoroStatsState {
     required this.today,
     required this.todayDate,
     required this.perTask,
+    required this.history,
+    required this.perTaskHistory,
     required this.autoComplete,
     required this.isLoaded,
   });
@@ -25,6 +30,8 @@ class PomodoroStatsState {
   final int today;
   final String todayDate;
   final Map<String, int> perTask;
+  final List<String> history;
+  final Map<String, List<DateTime>> perTaskHistory;
   final bool autoComplete;
   final bool isLoaded;
 
@@ -32,12 +39,16 @@ class PomodoroStatsState {
     int? today,
     String? todayDate,
     Map<String, int>? perTask,
+    List<String>? history,
+    Map<String, List<DateTime>>? perTaskHistory,
     bool? autoComplete,
   }) {
     return PomodoroStatsState(
       today: today ?? this.today,
       todayDate: todayDate ?? this.todayDate,
       perTask: perTask ?? this.perTask,
+      history: history ?? this.history,
+      perTaskHistory: perTaskHistory ?? this.perTaskHistory,
       autoComplete: autoComplete ?? this.autoComplete,
       isLoaded: true,
     );
@@ -48,16 +59,19 @@ class PomodoroStats extends Notifier<PomodoroStatsState> {
   static const _kToday = 'pomodoro.today';
   static const _kTodayDate = 'pomodoro.today.date';
   static const _kPerTask = 'pomodoro.per_task';
+  static const _kHistory = 'pomodoro.history';
+  static const _kPerTaskHistory = 'pomodoro.per_task_history';
   static const _kAutoComplete = 'pomodoro.auto_complete';
 
   @override
   PomodoroStatsState build() {
-    // Hidratamos en background; mientras tanto exponemos defaults.
     _hydrate();
     return PomodoroStatsState(
       today: 0,
       todayDate: _todayKey(),
       perTask: const {},
+      history: const [],
+      perTaskHistory: const {},
       autoComplete: false,
       isLoaded: false,
     );
@@ -79,19 +93,42 @@ class PomodoroStats extends Notifier<PomodoroStatsState> {
       today = stored;
       todayDate = savedDate ?? todayKey;
     }
-    final raw = prefs.getString(_kPerTask);
+
+    final rawPerTask = prefs.getString(_kPerTask);
     Map<String, int> perTask = const {};
-    if (raw != null && raw.isNotEmpty) {
+    if (rawPerTask != null && rawPerTask.isNotEmpty) {
       try {
-        final decoded = json.decode(raw) as Map<String, dynamic>;
+        final decoded = json.decode(rawPerTask) as Map<String, dynamic>;
         perTask = decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
       } catch (_) {/* ignorar */}
     }
+
+    final rawHistory = prefs.getStringList(_kHistory) ?? const [];
+    final history = List<String>.from(rawHistory);
+
+    final rawPerTaskHistory = prefs.getString(_kPerTaskHistory);
+    Map<String, List<DateTime>> perTaskHistory = const {};
+    if (rawPerTaskHistory != null && rawPerTaskHistory.isNotEmpty) {
+      try {
+        final decoded = json.decode(rawPerTaskHistory) as Map<String, dynamic>;
+        perTaskHistory = decoded.map((k, v) {
+          final list = (v as List)
+              .map((e) => DateTime.tryParse(e.toString()))
+              .whereType<DateTime>()
+              .toList();
+          return MapEntry(k, list);
+        });
+      } catch (_) {/* ignorar */}
+    }
+
     final autoComplete = prefs.getBool(_kAutoComplete) ?? false;
+
     state = PomodoroStatsState(
       today: today,
       todayDate: todayDate,
       perTask: perTask,
+      history: history,
+      perTaskHistory: perTaskHistory,
       autoComplete: autoComplete,
       isLoaded: true,
     );
@@ -99,17 +136,30 @@ class PomodoroStats extends Notifier<PomodoroStatsState> {
 
   Future<void> incrementToday() async {
     final next = state.today + 1;
-    state = state.copyWith(today: next);
+    final todayKey = _todayKey();
+    final history = List<String>.from(state.history);
+    if (!history.contains(todayKey)) history.add(todayKey);
+    state = state.copyWith(today: next, todayDate: todayKey, history: history);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_kToday, next);
+    await prefs.setString(_kTodayDate, todayKey);
+    await prefs.setStringList(_kHistory, history);
   }
 
   Future<void> incrementTask(String taskId) async {
-    final next = Map<String, int>.from(state.perTask);
-    next[taskId] = (next[taskId] ?? 0) + 1;
-    state = state.copyWith(perTask: next);
+    final nextCount = Map<String, int>.from(state.perTask);
+    nextCount[taskId] = (nextCount[taskId] ?? 0) + 1;
+    final nextHistory = Map<String, List<DateTime>>.from(state.perTaskHistory);
+    final list = List<DateTime>.from(nextHistory[taskId] ?? const []);
+    list.add(DateTime.now());
+    nextHistory[taskId] = list;
+    state = state.copyWith(perTask: nextCount, perTaskHistory: nextHistory);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kPerTask, json.encode(next));
+    await prefs.setString(_kPerTask, json.encode(nextCount));
+    await prefs.setString(
+        _kPerTaskHistory,
+        json.encode(nextHistory.map(
+            (k, v) => MapEntry(k, v.map((d) => d.toIso8601String()).toList()))));
   }
 
   Future<void> setAutoComplete(bool value) async {
@@ -118,12 +168,52 @@ class PomodoroStats extends Notifier<PomodoroStatsState> {
     await prefs.setBool(_kAutoComplete, value);
   }
 
-  static String _todayKey() {
-    final now = DateTime.now();
-    final y = now.year.toString().padLeft(4, '0');
-    final m = now.month.toString().padLeft(2, '0');
-    final d = now.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
+  // ── Derivados (no se persisten, se computan) ──────────────
+
+  /// Racha actual: días consecutivos hacia atrás con al menos 1
+  /// pomodoro. Se corta si el día actual está vacío (porque recién
+  /// arranca el día) o si hay un gap.
+  int currentStreak() {
+    final history = state.history.toSet();
+    final today = _todayKey();
+    int streak = 0;
+    var cursor = DateTime.now();
+    // Si hoy no tiene pomodoros pero ayer sí, la racha es de ayer hacia
+    // atrás (racha "en riesgo"). Para el usuario la racha debe reflejar
+    // continuidad, así que si hoy está en 0, empezamos desde ayer.
+    if (!history.contains(today)) {
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+    while (history.contains(_keyOf(cursor))) {
+      streak++;
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+    return streak;
+  }
+
+  /// Tiempo total invertido en una tarea en minutos (suma de pomodoros
+  /// × duración del preset actual de trabajo). Como el preset puede
+  /// haber cambiado, aproximamos con 25 min (estándar). Si querés
+  /// exactitud por preset, se persiste en cada sesión.
+  int totalMinutesFor(String taskId, {int workMinutes = 25}) {
+    final count = state.perTask[taskId] ?? 0;
+    return count * workMinutes;
+  }
+
+  /// Última vez que se trabajó en la tarea, o null si nunca.
+  DateTime? lastSessionFor(String taskId) {
+    final list = state.perTaskHistory[taskId];
+    if (list == null || list.isEmpty) return null;
+    return list.last;
+  }
+
+  static String _todayKey() => _keyOf(DateTime.now());
+
+  static String _keyOf(DateTime d) {
+    final y = d.year.toString().padLeft(4, '0');
+    final m = d.month.toString().padLeft(2, '0');
+    final dd = d.day.toString().padLeft(2, '0');
+    return '$y-$m-$dd';
   }
 }
 

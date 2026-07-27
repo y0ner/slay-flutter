@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../data/local/pomodoro_stats.dart';
 import '../../data/models/category.dart';
@@ -70,6 +71,9 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
   void dispose() {
     _timer?.cancel();
     _pulse.dispose();
+    // Asegurar que el wake lock quede liberado si el usuario navega
+    // fuera durante un focus (Pomodoro es un tab del shell).
+    WakelockPlus.disable();
     super.dispose();
   }
 
@@ -105,6 +109,11 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
     setState(() => _running = !_running);
     _timer?.cancel();
     if (_running) {
+      // Sólo durante sesiones de TRABAJO la pantalla debe quedarse
+      // encendida. En descansos la pantalla puede apagarse normal.
+      if (_kind == SessionKind.work) {
+        WakelockPlus.enable();
+      }
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
         setState(() {
@@ -112,12 +121,15 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
           if (_remaining <= 0) _finishSession();
         });
       });
+    } else {
+      WakelockPlus.disable();
     }
   }
 
   void _reset() {
     HapticFeedback.lightImpact();
     _timer?.cancel();
+    WakelockPlus.disable();
     setState(() {
       _running = false;
       _remaining = _totalForKind;
@@ -127,9 +139,10 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
   /// Salta al siguiente estado del ciclo (sin contar como completado).
   void _skip() {
     HapticFeedback.lightImpact();
+    _timer?.cancel();
+    WakelockPlus.disable();
     setState(() {
       _running = false;
-      _timer?.cancel();
       _advanceKind(completed: false);
       _remaining = _totalForKind;
     });
@@ -145,6 +158,10 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
       _running = false;
       _remaining = _totalForKind;
     });
+    // El timer terminó → siempre soltamos el wake lock (sea work o
+    // break; en work porque la sesión acabó, en break porque nunca
+    // lo activamos).
+    WakelockPlus.disable();
     if (wasWork) {
       // Stats: hoy + por tarea (si había seleccionada). Fire-and-forget:
       // los métodos son async pero actualizan `state` (ref.watch lo ve).
@@ -429,8 +446,11 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                   color: scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                child: Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  alignment: WrapAlignment.spaceEvenly,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     _Stat(
                       icon: Icons.local_fire_department_outlined,
@@ -438,20 +458,18 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                       value: '${ref.watch(pomodoroStatsProvider).today}',
                       color: const Color(0xFFFB923C),
                     ),
-                    Container(
-                        width: 1,
-                        height: 28,
-                        color: scheme.outline.withValues(alpha: 0.2)),
+                    _Stat(
+                      icon: Icons.bolt_outlined,
+                      label: 'Racha',
+                      value: '${ref.watch(pomodoroStatsProvider.notifier).currentStreak()}d',
+                      color: const Color(0xFFEAB308),
+                    ),
                     _Stat(
                       icon: Icons.timer_outlined,
                       label: 'Preset',
                       value: _preset.label,
                       color: scheme.primary,
                     ),
-                    Container(
-                        width: 1,
-                        height: 28,
-                        color: scheme.outline.withValues(alpha: 0.2)),
                     _Stat(
                       icon: Icons.loop,
                       label: 'Ciclo',

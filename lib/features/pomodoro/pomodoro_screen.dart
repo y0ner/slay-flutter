@@ -111,7 +111,14 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
         SessionKind.longBreak => Icons.self_improvement_outlined,
       };
 
+  /// Intenta iniciar/pausar. Si no hay tarea seleccionada y está
+/// intentando INICIAR (no pausar), abre el picker en su lugar para
+/// guiar al usuario.
   void _toggle() {
+    if (!_running && _selectedTask == null) {
+      _pickTask();
+      return;
+    }
     HapticFeedback.selectionClick();
     setState(() => _running = !_running);
     _timer?.cancel();
@@ -503,7 +510,9 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                   _PlayPauseButton(
                     running: _running,
                     accent: accent,
+                    enabled: _selectedTask != null,
                     onPressed: _toggle,
+                    onDisabledTap: _pickTask,
                   ),
                   _CircleAction(
                     icon: Icons.skip_next,
@@ -517,16 +526,29 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
               const SizedBox(height: 8),
 
               // ── Pick task ───────────────────────────────
-              TextButton.icon(
-                onPressed: _running ? null : _pickTask,
-                icon: const Icon(Icons.task_alt),
-                label: Text(_selectedTask == null
-                    ? 'Elegir tarea para enfocarte'
-                    : 'Cambiar tarea'),
-                style: TextButton.styleFrom(
-                  foregroundColor: scheme.primary,
+              // Cuando no hay tarea: CTA prominente (FilledButton) — es
+              // prerrequisito para arrancar. Cuando ya hay: cambio sutil.
+              if (_selectedTask == null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: FilledButton.icon(
+                    onPressed: _running ? null : _pickTask,
+                    icon: const Icon(Icons.task_alt),
+                    label: const Text('Elegí una tarea para empezar'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                    ),
+                  ),
+                )
+              else
+                TextButton.icon(
+                  onPressed: _running ? null : _pickTask,
+                  icon: const Icon(Icons.swap_horiz),
+                  label: Text('Cambiar de tarea'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: scheme.primary,
+                  ),
                 ),
-              ),
                 ],
               ),
             ),
@@ -675,28 +697,44 @@ class _PlayPauseButton extends StatelessWidget {
     required this.running,
     required this.accent,
     required this.onPressed,
+    required this.enabled,
+    this.onDisabledTap,
   });
   final bool running;
   final Color accent;
   final VoidCallback onPressed;
+  final bool enabled;
+  // Se llama cuando el botón está deshabilitado y el usuario lo toca.
+  // Útil para abrir el picker de tarea automáticamente cuando falta.
+  final VoidCallback? onDisabledTap;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 80,
-      height: 80,
-      child: Material(
-        color: accent,
-        shape: const CircleBorder(),
-        elevation: 6,
-        shadowColor: accent.withValues(alpha: 0.5),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onPressed,
-          child: Icon(
-            running ? Icons.pause : Icons.play_arrow,
-            color: Colors.white,
-            size: 44,
+    final scheme = Theme.of(context).colorScheme;
+    final color = enabled
+        ? accent
+        : scheme.onSurfaceVariant.withValues(alpha: 0.3);
+    final iconColor = enabled ? Colors.white : scheme.onSurfaceVariant;
+    return Tooltip(
+      message: enabled
+          ? (running ? 'Pausar' : 'Iniciar')
+          : 'Elegí una tarea primero',
+      child: SizedBox(
+        width: 80,
+        height: 80,
+        child: Material(
+          color: color,
+          shape: const CircleBorder(),
+          elevation: enabled ? 6 : 0,
+          shadowColor: enabled ? accent.withValues(alpha: 0.5) : null,
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: enabled ? onPressed : onDisabledTap,
+            child: Icon(
+              running ? Icons.pause : Icons.play_arrow,
+              color: iconColor,
+              size: 44,
+            ),
           ),
         ),
       ),

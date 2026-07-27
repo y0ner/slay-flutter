@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/repositories/category_repository.dart';
+import '../tasks/category_editor_dialog.dart';
 
 class ManageCategoriesScreen extends ConsumerWidget {
   const ManageCategoriesScreen({super.key});
@@ -10,7 +11,18 @@ class ManageCategoriesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cats = ref.watch(categoriesStreamProvider);
     return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(title: const Text('Categorías')),
+      floatingActionButton: FloatingActionButton(
+        // Mismo FAB contextual que en Tareas: acá es para crear
+        // categoría. La edición/eliminación se hace en línea
+        // (swipe / long-press) sobre cada item de la lista.
+        onPressed: () => showDialog(
+          context: context,
+          builder: (_) => const CategoryEditorDialog(),
+        ),
+        child: const Icon(Icons.add),
+      ),
       body: cats.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),

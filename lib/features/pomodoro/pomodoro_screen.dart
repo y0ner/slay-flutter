@@ -215,17 +215,24 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
         await ref.read(taskRepositoryProvider).getAll();
     final categories = await ref.read(categoryRepositoryProvider).getAll();
     if (!mounted) return;
-    final selected = await showModalBottomSheet<Task>(
+    final selected = await showModalBottomSheet<_TaskPickResult>(
       context: context,
       isScrollControlled: true,
+      isDismissible: true,
       builder: (_) => _TaskPickerSheet(
         tasks: tasks.where((t) => !t.isCompleted).toList(),
         categories: categories,
         current: _selectedTask,
       ),
     );
-    if (selected != null) {
-      setState(() => _selectedTask = selected);
+    // null = el usuario cerró sin elegir (X / drag / tap afuera) → no
+    // tocamos la selección. `_TaskPickResult.cleared` = opción explícita
+    // "Quitar selección". `_TaskPickResult(task)` = eligió una.
+    if (selected == null) return;
+    if (selected.cleared) {
+      setState(() => _selectedTask = null);
+    } else {
+      setState(() => _selectedTask = selected.task);
     }
   }
 
@@ -662,9 +669,32 @@ class _TaskPickerSheetState extends State<_TaskPickerSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text('Enfocate en',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
+            // Header con título + botón cerrar. Antes sólo estaba el
+            // título centrado → al usuario le costaba encontrar cómo
+            // salir sin elegir. Ahora: X explícito + drag down + tap
+            // afuera siguen funcionando.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Cerrar',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                  const Expanded(
+                    child: Center(
+                      child: Text('Enfocate en',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  // Padding simétrico para que el título quede centrado.
+                  const SizedBox(width: 48),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: TextField(
@@ -694,9 +724,23 @@ class _TaskPickerSheetState extends State<_TaskPickerSheet> {
                     )
                   : ListView.builder(
                       shrinkWrap: true,
-                      itemCount: filtered.length,
+                      // +1 para el item "Quitar selección" si hay actual.
+                      itemCount:
+                          filtered.length + (widget.current == null ? 0 : 1),
                       itemBuilder: (_, i) {
-                        final t = filtered[i];
+                        // Primer slot reservado para "Quitar selección".
+                        if (widget.current != null && i == 0) {
+                          return ListTile(
+                            leading: Icon(Icons.clear,
+                                color: scheme.onSurfaceVariant),
+                            title: Text('Quitar selección',
+                                style: TextStyle(
+                                    color: scheme.onSurfaceVariant)),
+                            onTap: () => Navigator.pop<_TaskPickResult>(
+                                context, _TaskPickResult.cleared()),
+                          );
+                        }
+                        final t = filtered[widget.current == null ? i : i - 1];
                         final cat = catById[t.categoryId];
                         final selected = widget.current?.id == t.id;
                         return ListTile(
@@ -719,7 +763,8 @@ class _TaskPickerSheetState extends State<_TaskPickerSheet> {
                           trailing: selected
                               ? Icon(Icons.check, color: scheme.primary)
                               : null,
-                          onTap: () => Navigator.pop(context, t),
+                          onTap: () => Navigator.pop<_TaskPickResult>(
+                              context, _TaskPickResult.task(t)),
                         );
                       },
                     ),
@@ -730,6 +775,21 @@ class _TaskPickerSheetState extends State<_TaskPickerSheet> {
       ),
     );
   }
+}
+
+/// Resultado del picker de tarea. Tres estados mutuamente excluyentes:
+/// - `null` retornado por el sheet: usuario descartó (X, drag, tap afuera)
+///   → NO se modifica `_selectedTask`.
+/// - `_TaskPickResult.cleared`: usuario eligió "Quitar selección"
+///   → `_selectedTask` pasa a null.
+/// - `_TaskPickResult(task: ...)`: usuario eligió una tarea.
+class _TaskPickResult {
+  const _TaskPickResult.task(this.task) : cleared = false;
+  const _TaskPickResult.cleared()
+      : task = null,
+        cleared = true;
+  final Task? task;
+  final bool cleared;
 }
 
 Color _parseColor(String h) =>

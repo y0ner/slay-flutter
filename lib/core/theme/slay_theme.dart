@@ -78,6 +78,24 @@ class SlayTheme {
         centerTitle: false,
         foregroundColor: scheme.onSurface,
       ),
+      // En dark mode, el default M3 (primaryContainer = accent @ 20% sobre
+      // fondo oscuro) da un efecto glassy con glow verde que al usuario
+      // le gusta. En light mode, accent @ 15% sobre fondo claro queda
+      // casi invisible — el FAB se ve lavado y sin contraste. Forzamos
+      // un accent sólido (primary) en light para que se vea como un FAB
+      // tradicional, conservando el glassy en dark.
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: scheme.brightness == Brightness.dark
+            ? scheme.primaryContainer
+            : scheme.primary,
+        foregroundColor: scheme.brightness == Brightness.dark
+            ? scheme.onPrimaryContainer
+            : scheme.onPrimary,
+        elevation: 4,
+        focusElevation: 6,
+        hoverElevation: 6,
+        highlightElevation: 8,
+      ),
       cardTheme: CardThemeData(
         color: scheme.surface,
         elevation: 0,

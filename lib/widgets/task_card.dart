@@ -77,6 +77,13 @@ class _TaskCardState extends ConsumerState<TaskCard> {
     // Pomodoros invertidos en esta tarea (sólo si > 0, sino ni se muestra).
     final pomodoroCount = ref.watch(pomodoroStatsProvider
         .select((s) => s.perTask[task.id] ?? 0));
+    // Tiempo total invertido (en minutos) usando el preset estándar
+    // como aproximación. El caller puede refinar si quiere exactitud
+    // por preset persistido por sesión (futuro enhancement).
+    final totalMinutes = pomodoroCount * 25;
+    // Última sesión (hace cuánto se trabajó en esta tarea).
+    final lastSession = ref.watch(pomodoroStatsProvider
+        .select((s) => s.perTaskHistory[task.id]?.lastOrNull));
 
     return Dismissible(
       key: ValueKey('task-${task.id}'),
@@ -128,6 +135,17 @@ class _TaskCardState extends ConsumerState<TaskCard> {
                     color: task.isCompleted ? subtle : null,
                   ),
                 ),
+                if (pomodoroCount > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '⏱ ${_formatMinutes(totalMinutes)}${_agoLabel(lastSession)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: subtle,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
                 if (task.hasSubtasks) ...[
                   const SizedBox(height: 4),
                   Text(
@@ -317,4 +335,34 @@ class _SwipeBg extends StatelessWidget {
       child: Icon(icon, color: Colors.white, size: 28),
     );
   }
+}
+
+/// Formatea minutos como "1h 15m" o "45m". Para 0 → "0m".
+String _formatMinutes(int minutes) {
+  if (minutes < 60) return '${minutes}m';
+  final h = minutes ~/ 60;
+  final m = minutes % 60;
+  if (m == 0) return '${h}h';
+  return '${h}h ${m}m';
+}
+
+/// Etiqueta corta de "hace cuánto" para la última sesión de pomodoro.
+/// null si nunca se trabajó. Compacto: "hoy", "ayer", "hace 3d".
+String _agoLabel(DateTime? last) {
+  if (last == null) return '';
+  final diff = DateTime.now().difference(last);
+  if (diff.inMinutes < 1) return ' · ahora';
+  if (diff.inMinutes < 60) return ' · hace ${diff.inMinutes}m';
+  if (diff.inHours < 24 && last.day == DateTime.now().day) {
+    return ' · hoy';
+  }
+  final yesterday = DateTime.now().subtract(const Duration(days: 1));
+  if (last.year == yesterday.year &&
+      last.month == yesterday.month &&
+      last.day == yesterday.day) {
+    return ' · ayer';
+  }
+  if (diff.inDays < 7) return ' · hace ${diff.inDays}d';
+  if (diff.inDays < 30) return ' · hace ${diff.inDays ~/ 7}sem';
+  return ' · hace ${diff.inDays ~/ 30}m';
 }

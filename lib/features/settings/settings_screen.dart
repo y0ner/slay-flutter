@@ -96,32 +96,13 @@ class SettingsScreen extends ConsumerWidget {
         ),
         const Divider(),
 
-        ListTile(
-          leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
-          title: Text('Cerrar sesión',
-              style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          onTap: () async {
-            final ok = await showDialog<bool>(
-              context: context,
-              builder: (_) => AlertDialog(
-                title: const Text('Cerrar sesión'),
-                content: const Text('¿Estás seguro?'),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancelar')),
-                  FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Salir')),
-                ],
-              ),
-            );
-            if (ok == true) {
-              await ref.read(authRepositoryProvider).signOut();
-              if (context.mounted) context.go('/login');
-            }
-          },
-        ),
+        // ListTile con estado propio para mostrar loading durante
+        // signOut y evitar la sensación de "pantalla en negro".
+        // El router redirect (app_router.dart) se encarga de llevar
+        // al usuario a /login al detectar `currentSession == null`,
+        // así que acá NO llamamos `context.go('/login')` a mano
+        // (competía con el redirect y dejaba parpadeo).
+        const _LogoutTile(),
       ],
     );
   }
@@ -131,6 +112,70 @@ class SettingsScreen extends ConsumerWidget {
         AppThemeMode.light => 'Claro',
         AppThemeMode.dark => 'Oscuro',
       };
+}
+
+/// Tile de "Cerrar sesión" aislado en un ConsumerStatefulWidget para
+/// manejar el spinner de loading sin convertir toda la pantalla.
+class _LogoutTile extends ConsumerStatefulWidget {
+  const _LogoutTile();
+
+  @override
+  ConsumerState<_LogoutTile> createState() => _LogoutTileState();
+}
+
+class _LogoutTileState extends ConsumerState<_LogoutTile> {
+  bool _loading = false;
+
+  Future<void> _confirmAndSignOut() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cerrar sesión'),
+        content: const Text('¿Estás seguro?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Salir')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _loading = true);
+    try {
+      await ref.read(authRepositoryProvider).signOut();
+      // El router redirect detecta que currentSession == null y
+      // navega a /login. No hace falta context.go manual.
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cerrar sesión: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final error = Theme.of(context).colorScheme.error;
+    return ListTile(
+      leading: _loading
+          ? SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.5, color: error),
+            )
+          : Icon(Icons.logout, color: error),
+      title: Text('Cerrar sesión', style: TextStyle(color: error)),
+      enabled: !_loading,
+      onTap: _loading ? null : _confirmAndSignOut,
+    );
+  }
 }
 
 /// Helper de SharedPreferences que se puede llamar en init.

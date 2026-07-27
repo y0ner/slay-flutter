@@ -219,3 +219,80 @@ class PomodoroStats extends Notifier<PomodoroStatsState> {
 
 final pomodoroStatsProvider =
     NotifierProvider<PomodoroStats, PomodoroStatsState>(PomodoroStats.new);
+
+// ── Configuración persistente del preset personalizado ──────
+
+/// Duraciones elegidas por el usuario cuando selecciona el preset
+/// "Personalizado". Persiste en SharedPreferences para sobrevivir
+/// cierres de la app.
+class PomodoroCustomConfig {
+  const PomodoroCustomConfig({
+    required this.work,
+    required this.shortBreak,
+    required this.longBreak,
+    required this.cyclesBeforeLong,
+  });
+  final int work;
+  final int shortBreak;
+  final int longBreak;
+  final int cyclesBeforeLong;
+
+  static const defaults = PomodoroCustomConfig(
+    work: 30,
+    shortBreak: 7,
+    longBreak: 20,
+    cyclesBeforeLong: 4,
+  );
+
+  PomodoroCustomConfig copyWith({
+    int? work,
+    int? shortBreak,
+    int? longBreak,
+    int? cyclesBeforeLong,
+  }) {
+    return PomodoroCustomConfig(
+      work: work ?? this.work,
+      shortBreak: shortBreak ?? this.shortBreak,
+      longBreak: longBreak ?? this.longBreak,
+      cyclesBeforeLong: cyclesBeforeLong ?? this.cyclesBeforeLong,
+    );
+  }
+}
+
+class PomodoroCustomNotifier extends Notifier<PomodoroCustomConfig> {
+  static const _kWork = 'pomodoro.custom.work';
+  static const _kShort = 'pomodoro.custom.short';
+  static const _kLong = 'pomodoro.custom.long';
+  static const _kCycles = 'pomodoro.custom.cycles';
+
+  @override
+  PomodoroCustomConfig build() {
+    _hydrate();
+    return PomodoroCustomConfig.defaults;
+  }
+
+  Future<void> _hydrate() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = PomodoroCustomConfig(
+      work: prefs.getInt(_kWork) ?? PomodoroCustomConfig.defaults.work,
+      shortBreak:
+          prefs.getInt(_kShort) ?? PomodoroCustomConfig.defaults.shortBreak,
+      longBreak: prefs.getInt(_kLong) ?? PomodoroCustomConfig.defaults.longBreak,
+      cyclesBeforeLong: prefs.getInt(_kCycles) ??
+          PomodoroCustomConfig.defaults.cyclesBeforeLong,
+    );
+  }
+
+  Future<void> save(PomodoroCustomConfig config) async {
+    state = config;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kWork, config.work);
+    await prefs.setInt(_kShort, config.shortBreak);
+    await prefs.setInt(_kLong, config.longBreak);
+    await prefs.setInt(_kCycles, config.cyclesBeforeLong);
+  }
+}
+
+final pomodoroCustomProvider =
+    NotifierProvider<PomodoroCustomNotifier, PomodoroCustomConfig>(
+        PomodoroCustomNotifier.new);

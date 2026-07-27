@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/local/pomodoro_stats.dart';
 import '../../data/models/category.dart';
 import '../../data/models/task.dart';
 import '../../data/repositories/category_repository.dart';
@@ -45,7 +46,6 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
   bool _running = false;
   SessionKind _kind = SessionKind.work;
   int _cycleIndex = 0; // cuántos pomodoros (trabajos) se completaron en el ciclo actual (0..cyclesBeforeLong)
-  int _pomodorosToday = 0;
   Task? _selectedTask;
 
   // ── In-screen overlays ──────────────────────────────────
@@ -58,6 +58,7 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
   bool _pickerOpen = false;
   List<Task> _pickerTasks = const [];
   List<Category> _pickerCategories = const [];
+  bool _presetOpen = false;
 
   Timer? _timer;
   late final AnimationController _pulse = AnimationController(
@@ -138,12 +139,24 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
     _timer?.cancel();
     HapticFeedback.heavyImpact();
     final wasWork = _kind == SessionKind.work;
-    if (wasWork) _pomodorosToday++;
+    final taskAtFinish = _selectedTask;
     _advanceKind(completed: wasWork);
     setState(() {
       _running = false;
       _remaining = _totalForKind;
     });
+    if (wasWork) {
+      // Stats: hoy + por tarea (si había seleccionada). Fire-and-forget:
+      // los métodos son async pero actualizan `state` (ref.watch lo ve).
+      ref.read(pomodoroStatsProvider.notifier).incrementToday();
+      if (taskAtFinish != null) {
+        ref.read(pomodoroStatsProvider.notifier).incrementTask(taskAtFinish.id);
+      }
+      // Ofrecer completar la tarea (si hay y no está ya completa).
+      if (taskAtFinish != null && !taskAtFinish.isCompleted && mounted) {
+        _maybeOfferComplete(taskAtFinish);
+      }
+    }
     if (!mounted) return;
     final msg = _kind == SessionKind.work
         ? '¡Vuelta al trabajo!'
@@ -166,6 +179,35 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
     );
   }
 
+  Future<void> _maybeOfferComplete(Task task) async {
+    final stats = ref.read(pomodoroStatsProvider);
+    final shouldComplete = stats.autoComplete
+        ? true
+        : await showDialog<bool>(
+            context: context,
+            builder: (_) => AlertDialog(
+              icon: Icon(Icons.task_alt,
+                  color: Theme.of(context).colorScheme.primary),
+              title: const Text('¡Pomodoro terminado!'),
+              content: Text('¿Marcar "${task.title}" como completada?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Seguir'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Completar'),
+                ),
+              ],
+            ),
+          ) ??
+            false;
+    if (!shouldComplete || !mounted) return;
+    await ref.read(taskRepositoryProvider).toggleComplete(task.id, true);
+    ref.invalidate(tasksStreamProvider);
+  }
+
   void _advanceKind({required bool completed}) {
     // Después de un trabajo: descanso corto, o largo si completó el ciclo.
     // Después de un descanso: vuelve a trabajo.
@@ -185,40 +227,22 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
   }
 
   Future<void> _pickPreset() async {
-    final selected = await showModalBottomSheet<PomodoroPreset>(
-      context: context,
-      useRootNavigator: false,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Configuración',
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            ),
-            for (final p in PomodoroPreset.all)
-              RadioListTile<PomodoroPreset>(
-                title: Text(p.label),
-                subtitle: Text(
-                    '${p.work}min trabajo · ${p.shortBreak}min descanso · ${p.longBreak}min largo'),
-                value: p,
-                groupValue: _preset,
-                onChanged: (v) => Navigator.pop(context, v),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-    if (selected != null && !_running) {
+    if (_running) return;
+    setState(() => _presetOpen = true);
+  }
+
+  void _onPresetResult(_PresetPickResult result) {
+    setState(() => _presetOpen = false);
+    if (result.preset != null) {
       setState(() {
-        _preset = selected;
+        _preset = result.preset!;
         _kind = SessionKind.work;
         _remaining = _totalForKind;
       });
+    }
+    if (result.autoComplete != null) {
+      ref.read(pomodoroStatsProvider.notifier).setAutoComplete(
+          result.autoComplete!);
     }
   }
 
@@ -411,7 +435,7 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                     _Stat(
                       icon: Icons.local_fire_department_outlined,
                       label: 'Hoy',
-                      value: '$_pomodorosToday',
+                      value: '${ref.watch(pomodoroStatsProvider).today}',
                       color: const Color(0xFFFB923C),
                     ),
                     Container(
@@ -490,6 +514,14 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                   categories: _pickerCategories,
                   current: _selectedTask,
                   onResult: _onPickerResult,
+                ),
+              ),
+            if (_presetOpen)
+              Positioned.fill(
+                child: _PresetOverlay(
+                  preset: _preset,
+                  autoComplete: ref.watch(pomodoroStatsProvider).autoComplete,
+                  onResult: _onPresetResult,
                 ),
               ),
           ],
@@ -849,6 +881,139 @@ class _TaskPickResult {
   const _TaskPickResult.cleared() : this(cleared: true);
   final Task? task;
   final bool cleared;
+}
+
+/// Resultado del sheet de preset. Cualquiera de los dos campos puede
+/// haber cambiado (o ninguno, si fue dismiss). El handler aplica sólo
+/// lo que vino cambiado.
+class _PresetPickResult {
+  const _PresetPickResult({this.preset, this.autoComplete});
+  final PomodoroPreset? preset;
+  final bool? autoComplete;
+}
+
+/// Overlay in-screen de configuración del Pomodoro (preset + toggle
+/// auto-completar). Misma justificación que _TaskPickerOverlay: no usa
+/// showModalBottomSheet para que se cierre al cambiar de tab.
+class _PresetOverlay extends StatefulWidget {
+  const _PresetOverlay({
+    required this.preset,
+    required this.autoComplete,
+    required this.onResult,
+  });
+  final PomodoroPreset preset;
+  final bool autoComplete;
+  final void Function(_PresetPickResult) onResult;
+
+  @override
+  State<_PresetOverlay> createState() => _PresetOverlayState();
+}
+
+class _PresetOverlayState extends State<_PresetOverlay> {
+  late PomodoroPreset _selected = widget.preset;
+  late bool _auto = widget.autoComplete;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => widget.onResult(const _PresetPickResult()),
+            child: Container(color: Colors.black.withValues(alpha: 0.5)),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: SafeArea(
+            child: Material(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              elevation: 8,
+              borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: scheme.outline.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text('Configuración',
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                          IconButton(
+                            tooltip: 'Cerrar',
+                            onPressed: () => widget.onResult(
+                                const _PresetPickResult()),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    for (final p in PomodoroPreset.all)
+                      RadioListTile<PomodoroPreset>(
+                        title: Text(p.label),
+                        subtitle: Text(
+                            '${p.work}min trabajo · ${p.shortBreak}min descanso · ${p.longBreak}min largo'),
+                        value: p,
+                        groupValue: _selected,
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(() => _selected = v);
+                        },
+                      ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      title: const Text('Auto-completar tarea'),
+                      subtitle: const Text(
+                          'Marca la tarea como hecha al terminar el pomodoro'),
+                      value: _auto,
+                      onChanged: (v) => setState(() => _auto = v),
+                    ),
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: FilledButton(
+                        onPressed: () => widget.onResult(_PresetPickResult(
+                          preset: _selected,
+                          autoComplete: _auto,
+                        )),
+                        child: const Text('Aplicar'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 Color _parseColor(String h) =>

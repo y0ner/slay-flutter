@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../data/local/pomodoro_stats.dart';
 import '../data/models/category.dart';
 import '../data/models/task.dart';
 
@@ -21,7 +23,7 @@ import '../data/models/task.dart';
 /// - Categoría (color de fondo de la categoría al 15% de opacity).
 /// - Fecha / recordatorio con ícono de calendario o campana.
 /// - Subtasks (contador en color primary, solo si tiene).
-class TaskCard extends StatefulWidget {
+class TaskCard extends ConsumerStatefulWidget {
   const TaskCard({
     super.key,
     required this.task,
@@ -42,10 +44,10 @@ class TaskCard extends StatefulWidget {
   final VoidCallback? onSendToFocus;
 
   @override
-  State<TaskCard> createState() => _TaskCardState();
+  ConsumerState<TaskCard> createState() => _TaskCardState();
 }
 
-class _TaskCardState extends State<TaskCard> {
+class _TaskCardState extends ConsumerState<TaskCard> {
   bool _justCopied = false;
 
   Color _parseColor(String h) =>
@@ -71,6 +73,10 @@ class _TaskCardState extends State<TaskCard> {
 
     final subtle = Theme.of(context).colorScheme.onSurfaceVariant;
     final dateChipColor = Theme.of(context).colorScheme.surface;
+
+    // Pomodoros invertidos en esta tarea (sólo si > 0, sino ni se muestra).
+    final pomodoroCount = ref.watch(pomodoroStatsProvider
+        .select((s) => s.perTask[task.id] ?? 0));
 
     return Dismissible(
       key: ValueKey('task-${task.id}'),
@@ -141,6 +147,10 @@ class _TaskCardState extends State<TaskCard> {
                     if (cat != null) _CategoryChip(name: cat.name, color: catColor),
                     if (cat != null) const SizedBox(width: 6),
                     _DateChip(task: task, bg: dateChipColor, color: subtle),
+                    if (pomodoroCount > 0) ...[
+                      const SizedBox(width: 6),
+                      _PomodoroChip(count: pomodoroCount),
+                    ],
                     const Spacer(),
                     Row(
                       mainAxisSize: MainAxisSize.min,
@@ -186,6 +196,38 @@ class _TaskCardState extends State<TaskCard> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PomodoroChip extends StatelessWidget {
+  const _PomodoroChip({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    const tomato = Color(0xFFEF4444); // mismo rojo del emoji 🍅
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: tomato.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('🍅', style: TextStyle(fontSize: 11)),
+          const SizedBox(width: 3),
+          Text(
+            '$count',
+            style: const TextStyle(
+              fontSize: 11,
+              color: tomato,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ),
     );
   }

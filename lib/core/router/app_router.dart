@@ -9,6 +9,7 @@ import '../../features/calendar/calendar_screen.dart';
 import '../../features/home/home_shell.dart';
 import '../../features/my_day/my_day_screen.dart';
 import '../../features/pomodoro/pomodoro_screen.dart';
+import '../../features/settings/completed_tasks_screen.dart';
 import '../../features/settings/manage_categories_sheet.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/subtasks/subtask_list_screen.dart';
@@ -99,6 +100,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings/categories',
         builder: (_, __) => const ManageCategoriesScreen(),
+      ),
+      GoRoute(
+        path: '/settings/completed',
+        builder: (_, __) => const CompletedTasksScreen(),
       ),
     ],
   );

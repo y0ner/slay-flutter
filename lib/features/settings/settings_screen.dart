@@ -77,9 +77,7 @@ class SettingsScreen extends ConsumerWidget {
           leading: const Icon(Icons.check_circle_outline),
           title: const Text('Tareas completadas'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            // Por implementar: lista histórica de tareas hechas
-          },
+          onTap: () => context.push('/settings/completed'),
         ),
         const Divider(),
 

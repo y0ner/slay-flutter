@@ -48,6 +48,17 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
   int _pomodorosToday = 0;
   Task? _selectedTask;
 
+  // ── In-screen overlays ──────────────────────────────────
+  // Antes usábamos showModalBottomSheet, pero el modal quedaba en el
+  // tope del Navigator interno del ShellRoute y sobrevivía al
+  // context.go('/calendar') → aparecía como "fantasma" sobre Calendario.
+  // Solución: renderizar el sheet como overlay dentro del widget del
+  // Pomodoro. Cuando GoRouter reemplaza la ruta interna (cambio de
+  // tab), el State se dispone y el overlay se va con él.
+  bool _pickerOpen = false;
+  List<Task> _pickerTasks = const [];
+  List<Category> _pickerCategories = const [];
+
   Timer? _timer;
   late final AnimationController _pulse = AnimationController(
     vsync: this,
@@ -212,37 +223,24 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
   }
 
   Future<void> _pickTask() async {
-    final tasks =
-        await ref.read(taskRepositoryProvider).getAll();
+    final tasks = await ref.read(taskRepositoryProvider).getAll();
     final categories = await ref.read(categoryRepositoryProvider).getAll();
     if (!mounted) return;
-    final selected = await showModalBottomSheet<_TaskPickResult>(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: true,
-      // Importante: atamos el sheet al Navigator INTERNO del ShellRoute
-      // (no al rootNavigator). Si queda en el root, sobrevive a
-      // context.go('/calendar') desde la BottomNav y aparece sobre la
-      // pantalla de Calendario como un fantasma (reporte del usuario).
-      // Con useRootNavigator:false, el sheet es hijo de la ruta interna
-      // de Pomodoro → al cambiar de tab, el ShellRoute reemplaza la
-      // ruta interna y el modal se cierra junto con ella.
-      useRootNavigator: false,
-      builder: (_) => _TaskPickerSheet(
-        tasks: tasks.where((t) => !t.isCompleted).toList(),
-        categories: categories,
-        current: _selectedTask,
-      ),
-    );
-    // null = el usuario cerró sin elegir (X / drag / tap afuera) → no
-    // tocamos la selección. `_TaskPickResult.cleared` = opción explícita
-    // "Quitar selección". `_TaskPickResult(task)` = eligió una.
-    if (selected == null) return;
-    if (selected.cleared) {
+    setState(() {
+      _pickerTasks = tasks.where((t) => !t.isCompleted).toList();
+      _pickerCategories = categories;
+      _pickerOpen = true;
+    });
+  }
+
+  void _onPickerResult(_TaskPickResult result) {
+    setState(() => _pickerOpen = false);
+    if (result.cleared) {
       setState(() => _selectedTask = null);
-    } else {
-      setState(() => _selectedTask = selected.task);
+    } else if (result.task != null) {
+      setState(() => _selectedTask = result.task);
     }
+    // Si result.task == null y !cleared → dismiss sin elección, no tocamos nada.
   }
 
   String _format(int s) {
@@ -262,10 +260,13 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-          child: Column(
-            children: [
+        child: Stack(
+          children: [
+            // Contenido principal
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+              child: Column(
+                children: [
               // ── Header ──────────────────────────────────
               Row(
                 children: [
@@ -477,8 +478,21 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                   foregroundColor: scheme.primary,
                 ),
               ),
-            ],
-          ),
+                ],
+              ),
+            ),
+            // ── Overlays in-screen ────────────────────────────
+            // Ver nota arriba sobre por qué NO usamos showModalBottomSheet.
+            if (_pickerOpen)
+              Positioned.fill(
+                child: _TaskPickerOverlay(
+                  tasks: _pickerTasks,
+                  categories: _pickerCategories,
+                  current: _selectedTask,
+                  onResult: _onPickerResult,
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -633,23 +647,28 @@ class _PlayPauseButton extends StatelessWidget {
   }
 }
 
-/// Bottom sheet para elegir la tarea en la que enfocarse. Muestra
-/// categoría (chip de color) y conteo de subtareas si los tiene.
-class _TaskPickerSheet extends StatefulWidget {
-  const _TaskPickerSheet({
+/// Overlay in-screen para elegir la tarea. NO usa showModalBottomSheet
+/// (ese quedaba en el tope del Navigator y sobrevivía al cambio de tab).
+/// Renderiza un sheet con backdrop scrim al tope de la pantalla. Cuando
+/// el State del Pomodoro se dispone (porque GoRouter reemplazó la ruta
+/// interna al cambiar de tab), el overlay se va con él automáticamente.
+class _TaskPickerOverlay extends StatefulWidget {
+  const _TaskPickerOverlay({
     required this.tasks,
     required this.categories,
     required this.current,
+    required this.onResult,
   });
   final List<Task> tasks;
   final List<Category> categories;
   final Task? current;
+  final void Function(_TaskPickResult) onResult;
 
   @override
-  State<_TaskPickerSheet> createState() => _TaskPickerSheetState();
+  State<_TaskPickerOverlay> createState() => _TaskPickerOverlayState();
 }
 
-class _TaskPickerSheetState extends State<_TaskPickerSheet> {
+class _TaskPickerOverlayState extends State<_TaskPickerOverlay> {
   String _filter = '';
 
   @override
@@ -661,142 +680,173 @@ class _TaskPickerSheetState extends State<_TaskPickerSheet> {
             _filter.isEmpty ||
             t.title.toLowerCase().contains(_filter.toLowerCase()))
         .toList();
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: scheme.outline.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Header con título + botón cerrar. Antes sólo estaba el
-            // título centrado → al usuario le costaba encontrar cómo
-            // salir sin elegir. Ahora: X explícito + drag down + tap
-            // afuera siguen funcionando.
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  IconButton(
-                    tooltip: 'Cerrar',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
-                  const Expanded(
-                    child: Center(
-                      child: Text('Enfocate en',
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.w600)),
-                    ),
-                  ),
-                  // Padding simétrico para que el título quede centrado.
-                  const SizedBox(width: 48),
-                ],
-              ),
-            ),
-            const SizedBox(height: 4),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextField(
-                autofocus: false,
-                decoration: InputDecoration(
-                  hintText: 'Buscar tarea...',
-                  prefixIcon: const Icon(Icons.search),
-                  isDense: true,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onChanged: (v) => setState(() => _filter = v),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Flexible(
-              child: filtered.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Text(
-                        widget.tasks.isEmpty
-                            ? 'No hay tareas pendientes'
-                            : 'Sin coincidencias',
-                        style: TextStyle(color: scheme.onSurfaceVariant),
-                      ),
-                    )
-                  : ListView.builder(
-                      shrinkWrap: true,
-                      // +1 para el item "Quitar selección" si hay actual.
-                      itemCount:
-                          filtered.length + (widget.current == null ? 0 : 1),
-                      itemBuilder: (_, i) {
-                        // Primer slot reservado para "Quitar selección".
-                        if (widget.current != null && i == 0) {
-                          return ListTile(
-                            leading: Icon(Icons.clear,
-                                color: scheme.onSurfaceVariant),
-                            title: Text('Quitar selección',
-                                style: TextStyle(
-                                    color: scheme.onSurfaceVariant)),
-                            onTap: () => Navigator.pop<_TaskPickResult>(
-                                context, _TaskPickResult.cleared()),
-                          );
-                        }
-                        final t = filtered[widget.current == null ? i : i - 1];
-                        final cat = catById[t.categoryId];
-                        final selected = widget.current?.id == t.id;
-                        return ListTile(
-                          selected: selected,
-                          selectedTileColor:
-                              scheme.primaryContainer.withValues(alpha: 0.3),
-                          leading: cat != null
-                              ? CircleAvatar(
-                                  radius: 8,
-                                  backgroundColor:
-                                      _parseColor(cat.color),
-                                )
-                              : const CircleAvatar(
-                                  radius: 8, child: SizedBox.shrink()),
-                          title: Text(t.title,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: t.hasSubtasks
-                              ? Text('${t.subtaskCount} subtareas')
-                              : null,
-                          trailing: selected
-                              ? Icon(Icons.check, color: scheme.primary)
-                              : null,
-                          onTap: () => Navigator.pop<_TaskPickResult>(
-                              context, _TaskPickResult.task(t)),
-                        );
-                      },
-                    ),
-            ),
-            const SizedBox(height: 8),
-          ],
+
+    return Stack(
+      children: [
+        // Backdrop: tap dismiss
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => widget.onResult(const _TaskPickResult()),
+            child: Container(color: Colors.black.withValues(alpha: 0.5)),
+          ),
         ),
-      ),
+        // Sheet anclado abajo
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: SafeArea(
+            child: Padding(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom),
+              child: Material(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                elevation: 8,
+                borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24)),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 12),
+                    Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: scheme.outline.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            tooltip: 'Cerrar',
+                            onPressed: () => widget.onResult(
+                                const _TaskPickResult()),
+                            icon: const Icon(Icons.close),
+                          ),
+                          const Expanded(
+                            child: Center(
+                              child: Text('Enfocate en',
+                                  style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          const SizedBox(width: 48),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        autofocus: false,
+                        decoration: InputDecoration(
+                          hintText: 'Buscar tarea...',
+                          prefixIcon: const Icon(Icons.search),
+                          isDense: true,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onChanged: (v) => setState(() => _filter = v),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.5,
+                      ),
+                      child: filtered.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.all(32),
+                              child: Text(
+                                widget.tasks.isEmpty
+                                    ? 'No hay tareas pendientes'
+                                    : 'Sin coincidencias',
+                                style: TextStyle(
+                                    color: scheme.onSurfaceVariant),
+                              ),
+                            )
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: filtered.length +
+                                  (widget.current == null ? 0 : 1),
+                              itemBuilder: (_, i) {
+                                if (widget.current != null && i == 0) {
+                                  return ListTile(
+                                    leading: Icon(Icons.clear,
+                                        color: scheme.onSurfaceVariant),
+                                    title: Text('Quitar selección',
+                                        style: TextStyle(
+                                            color:
+                                                scheme.onSurfaceVariant)),
+                                    onTap: () => widget.onResult(
+                                        _TaskPickResult.cleared()),
+                                  );
+                                }
+                                final t = filtered[widget.current == null
+                                    ? i
+                                    : i - 1];
+                                final cat = catById[t.categoryId];
+                                final selected =
+                                    widget.current?.id == t.id;
+                                return ListTile(
+                                  selected: selected,
+                                  selectedTileColor: scheme.primaryContainer
+                                      .withValues(alpha: 0.3),
+                                  leading: cat != null
+                                      ? CircleAvatar(
+                                          radius: 8,
+                                          backgroundColor:
+                                              _parseColor(cat.color),
+                                        )
+                                      : const CircleAvatar(
+                                          radius: 8,
+                                          child: SizedBox.shrink()),
+                                  title: Text(t.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis),
+                                  subtitle: t.hasSubtasks
+                                      ? Text(
+                                          '${t.subtaskCount} subtareas')
+                                      : null,
+                                  trailing: selected
+                                      ? Icon(Icons.check,
+                                          color: scheme.primary)
+                                      : null,
+                                  onTap: () => widget.onResult(
+                                      _TaskPickResult.task(t)),
+                                );
+                              },
+                            ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
-/// Resultado del picker de tarea. Tres estados mutuamente excluyentes:
-/// - `null` retornado por el sheet: usuario descartó (X, drag, tap afuera)
-///   → NO se modifica `_selectedTask`.
-/// - `_TaskPickResult.cleared`: usuario eligió "Quitar selección"
-///   → `_selectedTask` pasa a null.
-/// - `_TaskPickResult(task: ...)`: usuario eligió una tarea.
+/// Resultado del picker de tarea. Tres estados:
+/// - `_TaskPickResult(task: null, cleared: false)` (empty) → usuario
+///   descartó (X, drag, tap afuera) → NO se modifica `_selectedTask`.
+/// - `_TaskPickResult.cleared()` → opción "Quitar selección" →
+///   `_selectedTask` pasa a null.
+/// - `_TaskPickResult.task(t)` → eligió una tarea.
 class _TaskPickResult {
-  const _TaskPickResult.task(this.task) : cleared = false;
-  const _TaskPickResult.cleared()
-      : task = null,
-        cleared = true;
+  const _TaskPickResult({this.task, this.cleared = false});
+  const _TaskPickResult.task(Task t) : this(task: t);
+  const _TaskPickResult.cleared() : this(cleared: true);
   final Task? task;
   final bool cleared;
 }

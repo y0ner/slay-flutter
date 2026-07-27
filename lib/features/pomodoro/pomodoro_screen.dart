@@ -176,6 +176,7 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
   Future<void> _pickPreset() async {
     final selected = await showModalBottomSheet<PomodoroPreset>(
       context: context,
+      useRootNavigator: false,
       builder: (_) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -219,6 +220,14 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
       context: context,
       isScrollControlled: true,
       isDismissible: true,
+      // Importante: atamos el sheet al Navigator INTERNO del ShellRoute
+      // (no al rootNavigator). Si queda en el root, sobrevive a
+      // context.go('/calendar') desde la BottomNav y aparece sobre la
+      // pantalla de Calendario como un fantasma (reporte del usuario).
+      // Con useRootNavigator:false, el sheet es hijo de la ruta interna
+      // de Pomodoro → al cambiar de tab, el ShellRoute reemplaza la
+      // ruta interna y el modal se cierra junto con ella.
+      useRootNavigator: false,
       builder: (_) => _TaskPickerSheet(
         tasks: tasks.where((t) => !t.isCompleted).toList(),
         categories: categories,

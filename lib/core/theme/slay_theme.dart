@@ -67,34 +67,45 @@ class SlayTheme {
   static ThemeData get dark => _build(darkScheme);
 
   static ThemeData _build(ColorScheme scheme) {
+    final isDark = scheme.brightness == Brightness.dark;
     return ThemeData(
       useMaterial3: true,
       brightness: scheme.brightness,
       colorScheme: scheme,
-      scaffoldBackgroundColor: scheme.brightness == Brightness.dark ? darkBg : lightBg,
+      scaffoldBackgroundColor: isDark ? darkBg : lightBg,
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
         foregroundColor: scheme.onSurface,
       ),
-      // En dark mode, el default M3 (primaryContainer = accent @ 20% sobre
-      // fondo oscuro) da un efecto glassy con glow verde que al usuario
-      // le gusta. En light mode, accent @ 15% sobre fondo claro queda
-      // casi invisible — el FAB se ve lavado y sin contraste. Forzamos
-      // un accent sólido (primary) en light para que se vea como un FAB
-      // tradicional, conservando el glassy en dark.
+      // Bug #3: el FAB antes se veía glassy solo en dark (primaryContainer
+      // translúcido sobre fondo oscuro) y sólido/verde plano en light, lo
+      // que rompía la consistencia visual entre modos. Acá construimos
+      // un FAB "glass" para los dos modos:
+      //   - Fondo translúcido (primary @ 15% en light, @ 22% en dark)
+      //   - Borde sutil con primary al 45% para definir la silueta
+      //   - Foreground en primary sólido (icono blanco en dark, verde
+      //     accent en light)
+      //   - Shadow teñido con primary (glow) + elevation baja
+      // El resultado: el contenido detrás se transparenta, dando
+      // sensación de profundidad sin perder contraste.
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: scheme.brightness == Brightness.dark
-            ? scheme.primaryContainer
-            : scheme.primary,
-        foregroundColor: scheme.brightness == Brightness.dark
-            ? scheme.onPrimaryContainer
-            : scheme.onPrimary,
-        elevation: 4,
-        focusElevation: 6,
-        hoverElevation: 6,
-        highlightElevation: 8,
+        backgroundColor: scheme.primary.withValues(
+          alpha: isDark ? 0.22 : 0.15,
+        ),
+        foregroundColor: isDark ? Colors.white : scheme.primary,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(
+            color: scheme.primary.withValues(alpha: isDark ? 0.55 : 0.45),
+            width: 1.2,
+          ),
+        ),
+        elevation: isDark ? 2 : 1,
+        focusElevation: 4,
+        hoverElevation: 4,
+        highlightElevation: 6,
       ),
       cardTheme: CardThemeData(
         color: scheme.surface,

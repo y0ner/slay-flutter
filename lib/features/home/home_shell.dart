@@ -23,8 +23,12 @@ class HomeShell extends ConsumerWidget {
     _TabSpec('/settings',  Icons.settings_outlined,    Icons.settings,    'Ajustes'),
   ];
 
+  /// Iteramos en orden inverso: como `_tabs[0].path == '/'`, ese path es
+  /// prefijo de TODAS las ubicaciones. Si iteráramos de menor a mayor,
+  /// `'/tasks'.startsWith('/')` matchearía primero y el indicador quedaría
+  /// siempre en Mi Día (índice 0) sin importar a dónde naveguemos.
   int get _currentIndex {
-    for (var i = 0; i < _tabs.length; i++) {
+    for (var i = _tabs.length - 1; i >= 0; i--) {
       if (currentLocation.startsWith(_tabs[i].path)) return i;
     }
     return 0;

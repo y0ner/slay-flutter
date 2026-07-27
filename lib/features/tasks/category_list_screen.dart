@@ -6,6 +6,7 @@ import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import '../../data/models/category.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../widgets/category_card.dart';
+import 'category_editor_dialog.dart';
 
 class CategoryListScreen extends ConsumerStatefulWidget {
   const CategoryListScreen({super.key});
@@ -91,17 +92,17 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
   }
 
   void _showAddDialog(BuildContext context) {
-    showDialog(context: context, builder: (_) => const _CategoryDialog());
+    showDialog(context: context, builder: (_) => const CategoryEditorDialog());
   }
 }
 
 /// Grid normal: tap → navegar, long-press → editar.
-class _BrowseGrid extends StatelessWidget {
+class _BrowseGrid extends ConsumerWidget {
   const _BrowseGrid({required this.list});
   final List<Category> list;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return GridView.builder(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -117,16 +118,19 @@ class _BrowseGrid extends StatelessWidget {
           key: ValueKey(c.id),
           category: c,
           onTap: () => context.push('/tasks/${c.id}'),
-          onLongPress: () => _showEdit(context, c),
+          onLongPress: () => _showEdit(context, ref, c),
         );
       },
     );
   }
 
-  void _showEdit(BuildContext context, Category c) {
+  void _showEdit(BuildContext context, WidgetRef ref, Category c) {
     showDialog(
       context: context,
-      builder: (_) => _CategoryDialog(existing: c),
+      builder: (_) => CategoryEditorDialog(
+        existing: c,
+        onDelete: () => ref.read(categoryRepositoryProvider).delete(c.id),
+      ),
     );
   }
 }
@@ -203,112 +207,6 @@ class _EmptyState extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ],
-    );
-  }
-}
-
-class _CategoryDialog extends ConsumerStatefulWidget {
-  const _CategoryDialog({this.existing});
-  final Category? existing;
-
-  @override
-  ConsumerState<_CategoryDialog> createState() => _CategoryDialogState();
-}
-
-class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
-  late final _ctrl =
-      TextEditingController(text: widget.existing?.name ?? '');
-  String _color = '#4CAF50';
-
-  static const _colors = [
-    '#4CAF50', '#2196F3', '#9C27B0', '#F44336',
-    '#FF9800', '#795548', '#607D8B', '#E91E63',
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.existing != null) _color = widget.existing!.color;
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  Color _parse(String h) {
-    final v = int.parse(h.replaceFirst('#', '0xFF'));
-    return Color(v);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.existing == null ? 'Nueva categoría' : 'Editar'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _ctrl,
-            decoration: const InputDecoration(labelText: 'Nombre'),
-            autofocus: true,
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            children: [
-              for (final c in _colors)
-                GestureDetector(
-                  onTap: () => setState(() => _color = c),
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: _parse(c),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: _color == c ? Colors.white : Colors.transparent,
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-      actions: [
-        if (widget.existing != null)
-          TextButton(
-            onPressed: () async {
-              await ref
-                  .read(categoryRepositoryProvider)
-                  .delete(widget.existing!.id);
-              if (context.mounted) Navigator.pop(context);
-              ref.invalidate(categoriesStreamProvider);
-            },
-            child: const Text('Eliminar'),
-          ),
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-        FilledButton(
-          onPressed: () async {
-            final repo = ref.read(categoryRepositoryProvider);
-            if (widget.existing == null) {
-              await repo.create(name: _ctrl.text.trim(), color: _color);
-            } else {
-              await repo.update(
-                widget.existing!.id,
-                name: _ctrl.text.trim(),
-                color: _color,
-              );
-            }
-            if (mounted) Navigator.pop(context);
-            ref.invalidate(categoriesStreamProvider);
-          },
-          child: const Text('Guardar'),
         ),
       ],
     );

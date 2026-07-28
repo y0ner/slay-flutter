@@ -67,12 +67,15 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
           ),
         ],
       ),
-      floatingActionButton: _editMode
-          ? null
-          : FloatingActionButton(
-              onPressed: () => _showAddDialog(context),
-              child: const Icon(Icons.add),
-            ),
+      // FIX: el FAB lo provee el HomeShell (ruta /tasks → "Nueva
+      // categoría"). Antes había un FAB hardcodeado ACÁ que se
+      // duplicaba con el del shell y generaba dos botones apilados.
+      // Peor: como `context.push('/tasks/:id')` deja CategoryListScreen
+      // en el Navigator stack, durante el frame intermedio el FAB de
+      // esta pantalla seguía visible mientras el shell todavía
+      // evaluaba `currentLocation == '/tasks'`, abriendo el editor de
+      // categorías en vez del QuickAddDialog. Un único FAB (el del
+      // shell) elimina la ambigüedad.
       body: asyncCats.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
@@ -89,10 +92,6 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
         ),
       ),
     );
-  }
-
-  void _showAddDialog(BuildContext context) {
-    showDialog(context: context, builder: (_) => const CategoryEditorDialog());
   }
 }
 

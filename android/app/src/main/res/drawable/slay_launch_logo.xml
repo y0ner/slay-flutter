@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Logo del launch screen nativo de Android.
+
+  Dibuja el isotipo de Slay: cuadrado redondeado verde con el rayo
+  blanco, idéntico al que se ve dentro de la app. Se usa como capa
+  centrada encima del gradient de fondo (ver launch_background.xml).
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="120dp"
+        android:height="120dp"
+        android:gravity="center">
+        <shape android:shape="rectangle">
+            <corners android:radius="34dp" />
+            <gradient
+                android:angle="315"
+                android:startColor="#10B981"
+                android:endColor="#0EA371" />
+        </shape>
+    </item>
+    <item
+        android:width="120dp"
+        android:height="120dp"
+        android:gravity="center"
+        android:drawable="@drawable/slay_launch_bolt" />
+</layer-list>

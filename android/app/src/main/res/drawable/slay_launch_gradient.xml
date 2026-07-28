@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Gradient vertical verde Slay para el launch screen nativo.
+
+  Va desde el verde primario (#10B981) arriba a un verde más oscuro
+  (#059669) abajo — coincide con el gradiente del theme en la app
+  para que la transición entre el splash nativo y el SplashScreen
+  de Flutter sea seamless (el usuario ve el mismo verde en ambos).
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#10B981"
+        android:endColor="#059669"
+        android:type="linear" />
+</shape>

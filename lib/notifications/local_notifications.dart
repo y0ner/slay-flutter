@@ -95,8 +95,16 @@ class LocalNotifications {
     }
   }
 
-  Future<void> cancel(int id) => _plugin.cancel(id);
-  Future<void> cancelAll() => _plugin.cancelAll();
+  Future<void> cancel(int id) async {
+    // Inicialización lazy por si cancel() se llama antes de schedule
+    // (caso: dispose de PomodoroScreen sin sesión activa).
+    if (!_initialized) await init();
+    return _plugin.cancel(id);
+  }
+  Future<void> cancelAll() async {
+    if (!_initialized) await init();
+    return _plugin.cancelAll();
+  }
 
   /// Programa una notificación para el fin de un pomodoro. Si el
   /// momento ya pasó, devuelve false sin agendar.

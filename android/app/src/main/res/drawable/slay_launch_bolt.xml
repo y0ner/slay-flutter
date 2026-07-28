@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Vector rayo blanco centrado, usado encima del cuadrado verde de
+  slay_launch_logo.xml para componer el isotipo.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <!-- El rayo se dibuja como path: triángulo vertical centrado
+         (x: 35..85, y: 18..102). Grosor visual ~26dp. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M68,18 L42,62 L56,62 L50,102 L78,56 L64,56 Z" />
+</vector>

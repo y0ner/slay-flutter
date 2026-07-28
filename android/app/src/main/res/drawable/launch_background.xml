@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
+<!--
+  Launch background nativo de Slay.
 
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+  ANTES era solo `@android:color/white` (o `?android:colorBackground`
+  en dark, que daba negro → bug del "pantallazo negro antes del
+  splash").
+
+  AHORA: gradient verde Slay + isotipo centrado. Esto se muestra
+  mientras el engine de Flutter arranca y ejecuta `main()`. Cuando
+  Flutter pinta su primer frame, el SplashScreen toma el control
+  con un diseño coherente (mismo verde + logo animado), así que la
+  transición es invisible.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/slay_launch_gradient" />
+    <item
+        android:gravity="center"
+        android:width="120dp"
+        android:height="120dp"
+        android:drawable="@drawable/slay_launch_logo" />
 </layer-list>

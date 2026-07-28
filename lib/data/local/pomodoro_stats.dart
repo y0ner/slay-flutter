@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/pomodoro_preset.dart';
+
 /// Estado de las estadísticas persistidas del Pomodoro.
 ///
 /// - `today`: contador diario que se resetea automáticamente cuando
@@ -296,6 +298,83 @@ class PomodoroCustomNotifier extends Notifier<PomodoroCustomConfig> {
 final pomodoroCustomProvider =
     NotifierProvider<PomodoroCustomNotifier, PomodoroCustomConfig>(
         PomodoroCustomNotifier.new);
+
+// ── Preset seleccionado ─────────────────────────────────────
+
+/// Label persistido del preset activo. Cuando vale `'Personalizado'`,
+/// las duraciones vienen de `pomodoroCustomProvider`; si no, es uno
+/// de los built-in (Estándar / Corto / Largo). Esto permite que al
+/// cerrar y reabrir la app el usuario conserve su elección sin tener
+/// que volver a entrar al overlay de configuración.
+class PomodoroSelectedPresetNotifier extends Notifier<PomodoroPreset> {
+  static const _kPreset = 'pomodoro.preset';
+
+  @override
+  PomodoroPreset build() {
+    _hydrate();
+    return PomodoroPreset.standard;
+  }
+
+  Future<void> _hydrate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final label = prefs.getString(_kPreset);
+    if (label == null || label.isEmpty) return;
+    final custom = ref.read(pomodoroCustomProvider);
+    final match = PomodoroPreset.builtIn.firstWhere(
+      (p) => p.label == label,
+      orElse: () => PomodoroPreset(
+        'Personalizado',
+        custom.work,
+        custom.shortBreak,
+        custom.longBreak,
+        custom.cyclesBeforeLong,
+      ),
+    );
+    state = match;
+  }
+
+  Future<void> save(PomodoroPreset preset) async {
+    state = preset;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kPreset, preset.label);
+  }
+}
+
+final pomodoroSelectedPresetProvider =
+    NotifierProvider<PomodoroSelectedPresetNotifier, PomodoroPreset>(
+        PomodoroSelectedPresetNotifier.new);
+
+// ── Incremento configurable (chip "+N min") ─────────────────
+
+/// Minutos que suma el chip "+N min" cuando el usuario quiere extender
+/// la sesión actual (default 5). El user lo configura desde el overlay
+/// de preset; persiste entre cierres de la app.
+class PomodoroIncrementNotifier extends Notifier<int> {
+  static const _kIncrement = 'pomodoro.increment_minutes';
+
+  @override
+  int build() {
+    _hydrate();
+    return 5; // default histórico
+  }
+
+  Future<void> _hydrate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getInt(_kIncrement);
+    if (stored == null || stored <= 0) return;
+    state = stored;
+  }
+
+  Future<void> save(int minutes) async {
+    state = minutes;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kIncrement, minutes);
+  }
+}
+
+final pomodoroIncrementProvider =
+    NotifierProvider<PomodoroIncrementNotifier, int>(
+        PomodoroIncrementNotifier.new);
 
 // ── Persistencia del timer en curso (Paquete B) ──────────
 

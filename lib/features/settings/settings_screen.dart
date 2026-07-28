@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/state/logging_out_provider.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../data/repositories/auth_repository.dart';
 
@@ -144,36 +145,40 @@ class _LogoutTileState extends ConsumerState<_LogoutTile> {
     );
     if (ok != true || !mounted) return;
 
-    // Bug #11: el signOut + redirect dejaba 1-2 frames de "pantalla en
-    // negro" en dark mode (scaffoldBackgroundColor = #121212) antes de
-    // que el LoginScreen terminara de construir. Mostramos un modal
-    // fullscreen con el theme background para tapar la transición y
-    // dar feedback claro. Usamos el context del rootNavigator para
-    // que el modal sobreviva aunque el HomeShell se dispose durante
-    // el redirect.
-    final rootNav = Navigator.of(context, rootNavigator: true);
-    final barrierColor = Theme.of(context).scaffoldBackgroundColor;
+    // Bug #11 (v2): el signOut + redirect dejaba 1-2 frames de "pantalla
+    // en negro" en dark mode (scaffoldBackgroundColor = #121212) antes
+    // de que el LoginScreen terminara de construir.
+    //
+    // El intento anterior usaba `showDialog` sobre el rootNavigator, pero
+    // ese Navigator **es el de GoRouter** en MaterialApp.router, así que
+    // cuando el redirect reemplaza `/settings` → `/login`, ese Navigator
+    // se reconstruye y se lleva el dialog consigo.
+    //
+    // Fix correcto: el overlay se monta en `MaterialApp.router.builder`
+    // (POR ENCIMA del Navigator de GoRouter), así que sobrevive al
+    // redirect. Lo activamos seteando el provider ANTES del signOut,
+    // para que cuando se dispare el rebuild post-signOut el overlay ya
+    // esté en pantalla.
     setState(() => _loading = true);
-    showDialog(
-      context: rootNav.context,
-      barrierDismissible: false,
-      barrierColor: barrierColor,
-      builder: (_) => const _LoggingOutOverlay(),
-    );
+    ref.read(loggingOutProvider.notifier).state = true;
     try {
       await ref.read(authRepositoryProvider).signOut();
       // El router redirect se encarga de navegar a /login cuando
-      // currentSession == null. No necesitamos context.go manual.
+      // currentSession == null. Dejamos el overlay activo durante un
+      // momento para tapar la transición post-redirect; el timer lo
+      // apaga cuando ya estamos en /login.
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (ref.read(loggingOutProvider)) {
+          ref.read(loggingOutProvider.notifier).state = false;
+        }
+      });
     } catch (e) {
       if (!mounted) return;
-      rootNav.pop(); // cerrar overlay
+      ref.read(loggingOutProvider.notifier).state = false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al cerrar sesión: $e')),
       );
     }
-    // Si todo OK, dejamos el overlay: el redirect va a reemplazar el
-    // árbol de widgets (HomeShell + LoginScreen) y el overlay se va
-    // con el Navigator viejo.
   }
 
   @override
@@ -196,48 +201,3 @@ class _LogoutTileState extends ConsumerState<_LogoutTile> {
 
 /// Helper de SharedPreferences que se puede llamar en init.
 Future<SharedPreferences> initPrefs() => SharedPreferences.getInstance();
-
-/// Modal que aparece mientras se está cerrando la sesión. Tapa el
-/// frame de transición (que en dark mode se ve negro) y da feedback
-/// claro. El barrier ya tiene `scaffoldBackgroundColor` configurado
-/// desde quien lo abre, así que no hace falta Container acá adentro.
-class _LoggingOutOverlay extends StatelessWidget {
-  const _LoggingOutOverlay();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Material(
-        color: scheme.surface,
-        elevation: 4,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: scheme.primary,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                'Cerrando sesión...',
-                style: TextStyle(
-                  color: scheme.onSurface,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

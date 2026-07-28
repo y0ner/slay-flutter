@@ -7,35 +7,17 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../data/local/pomodoro_stats.dart';
 import '../../data/models/category.dart';
+import '../../data/models/pomodoro_preset.dart';
 import '../../data/models/task.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/task_repository.dart';
 import '../../notifications/local_notifications.dart';
 
-/// Preset configurable de duración. Las duraciones están en minutos.
-class PomodoroPreset {
-  const PomodoroPreset(this.label, this.work, this.shortBreak, this.longBreak,
-      this.cyclesBeforeLong);
-  final String label;
-  final int work;
-  final int shortBreak;
-  final int longBreak;
-  final int cyclesBeforeLong;
+// `PomodoroPreset` se re-exporta implícitamente vía el import para
+// mantener compatibilidad con los call-sites existentes del feature.
 
-  bool get isCustom => label == 'Personalizado';
-
-  static const standard =
-      PomodoroPreset('Estándar', 25, 5, 15, 4);
-  static const short = PomodoroPreset('Corto', 15, 3, 10, 4);
-  static const long = PomodoroPreset('Largo', 50, 10, 20, 4);
-
-  /// Sentinel de "Personalizado". Los valores reales los lee el overlay
-  /// desde `pomodoroCustomProvider`. Usar como `label: 'Personalizado'`
-  /// para detectarlo en `isCustom`.
-  static const customSentinel = PomodoroPreset('Personalizado', 0, 0, 0, 4);
-
-  static const builtIn = [standard, short, long];
-}
+// ── Sentinel re-export para los `builtIn` etc. ────────────────
+// (Definidos en data/models/pomodoro_preset.dart.)
 
 /// Tipo de sesión activa. Determina el color del anillo y la duración.
 enum SessionKind { work, shortBreak, longBreak }
@@ -83,6 +65,21 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
   @override
   void initState() {
     super.initState();
+    // Hidratamos el preset desde el provider en el primer frame.
+    // Hacemos esto acá (no en build) porque si no, cada cambio del
+    // provider pisaría el `_preset` local durante un setState.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final saved = ref.read(pomodoroSelectedPresetProvider);
+      setState(() {
+        _preset = saved;
+        // Si ya había remaining seteado con el default, lo recalculamos.
+        if (_kind == SessionKind.work &&
+            _remaining == PomodoroPreset.standard.work * 60) {
+          _remaining = saved.work * 60;
+        }
+      });
+    });
     // Paquete B: si la app se cerró con una sesión activa, le
     // ofrecemos al user recuperarla (o descartarla) apenas entre al tab.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -354,11 +351,12 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
     _clearSession();
   }
 
-  /// Paquete C: agrega 5 minutos al remaining actual (funciona en
-  /// cualquier estado: work o break). Útil cuando el user siente que
-  /// necesita un poco más antes de parar.
+  /// Paquete C: agrega N minutos (configurable vía `pomodoroIncrementProvider`,
+  /// default 5) al remaining actual (funciona en cualquier estado: work
+  /// o break). Útil cuando el user siente que necesita un poco más
+  /// antes de parar.
   void _extendSession() {
-    const extra = 5 * 60;
+    final extra = ref.read(pomodoroIncrementProvider) * 60;
     HapticFeedback.selectionClick();
     setState(() {
       _remaining += extra;
@@ -368,20 +366,34 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
       if (!_running) _running = true;
     });
     // Paquete B: reprogramamos el snapshot y la notificación para que
-    // reflejen los 5 min extra. Si está pausado, sólo actualizamos el
+    // reflejen los minutos extra. Si está pausado, sólo actualizamos el
     // snapshot (la notif se reagenda en el próximo toggle a running).
     _persistSession();
     if (_running) _scheduleEndNotification();
   }
 
-  void _finishSession() {
+  /// Llamado cuando el timer llega a 0. Decide entre work/break,
+  /// actualiza stats y muestra el diálogo post-work (si corresponde).
+  ///
+  /// FIX bug pantalla negra post-"sigue": antes `_maybeOfferComplete`
+  /// se llamaba fire-and-forget y la función seguía mostrando un
+  /// snackbar inmediatamente. Eso hacía que el snackbar y el dialog
+  /// coexistieran con el scrim del modal encima — en dark mode se
+  /// percibía como un "pantallazo negro" porque la pantalla detrás
+  /// del scrim quedaba completamente tapada y al cerrarse el dialog
+  /// solo se veía el snackbar naranja 1-2s antes de desaparecer.
+  ///
+  /// Ahora: el dialog se muestra y ESPERA la elección del user antes
+  /// de mostrar el snackbar. Orden limpio:
+  ///   setState → dialog → user elige → snackbar (si aplica).
+  Future<void> _finishSession() async {
     _timer?.cancel();
     HapticFeedback.heavyImpact();
     final wasWork = _kind == SessionKind.work;
     final taskAtFinish = _selectedTask;
     // Paquete B: el timer terminó naturalmente → limpiamos snapshot y
     // cancelamos la notif (ya no aplica).
-    _clearSession();
+    await _clearSession();
     _advanceKind(completed: wasWork);
     setState(() {
       _running = false;
@@ -399,8 +411,9 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
         ref.read(pomodoroStatsProvider.notifier).incrementTask(taskAtFinish.id);
       }
       // Ofrecer completar la tarea (si hay y no está ya completa).
+      // Esperamos la decisión del user antes de seguir.
       if (taskAtFinish != null && !taskAtFinish.isCompleted && mounted) {
-        _maybeOfferComplete(taskAtFinish);
+        await _maybeOfferComplete(taskAtFinish);
       }
     }
     if (!mounted) return;
@@ -487,7 +500,8 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
     }
     // _PostWorkChoice.continueBreak no hace nada extra: dejamos que el
     // _advanceKind siga su curso (ya pasamos a shortBreak en
-    // _finishSession).
+    // _finishSession). El snackbar principal lo muestra _finishSession
+    // al volver de este await.
   }
 
   // ── Paquete A: lifecycle de tarea mid-session ────────────
@@ -639,10 +653,16 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
         _kind = SessionKind.work;
         _remaining = _totalForKind;
       });
+      // Persistir la selección para que sobreviva al cerrar la app.
+      ref.read(pomodoroSelectedPresetProvider.notifier).save(result.preset!);
     }
     if (result.autoComplete != null) {
       ref.read(pomodoroStatsProvider.notifier).setAutoComplete(
           result.autoComplete!);
+    }
+    if (result.incrementMinutes != null) {
+      ref.read(pomodoroIncrementProvider.notifier)
+          .save(result.incrementMinutes!);
     }
   }
 
@@ -899,15 +919,19 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                   ),
                 ],
               ),
-              // Paquete C: chip "+5 min" sólo mientras corre, para
+              // Paquete C: chip "+N min" sólo mientras corre, para
               // extender la sesión actual sin tener que esperar a que
-              // termine (caso típico: "necesito un poco más").
+              // termine (caso típico: "necesito un poco más"). El valor
+              // viene de `pomodoroIncrementProvider` y el user lo
+              // configura desde el overlay de preset (default 5).
               if (_running)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: ActionChip(
                     avatar: Icon(Icons.add, size: 16, color: accent),
-                    label: const Text('+5 min'),
+                    label: Text(
+                      '+${ref.watch(pomodoroIncrementProvider)} min',
+                    ),
                     labelStyle: TextStyle(
                       color: accent,
                       fontWeight: FontWeight.w600,
@@ -1389,13 +1413,14 @@ class _TaskPickResult {
   final bool cleared;
 }
 
-/// Resultado del sheet de preset. Cualquiera de los dos campos puede
-/// haber cambiado (o ninguno, si fue dismiss). El handler aplica sólo
-/// lo que vino cambiado.
+/// Resultado del sheet de preset. Cualquiera de los campos puede haber
+/// cambiado (o ninguno, si fue dismiss). El handler aplica sólo lo
+/// que vino cambiado.
 class _PresetPickResult {
-  const _PresetPickResult({this.preset, this.autoComplete});
+  const _PresetPickResult({this.preset, this.autoComplete, this.incrementMinutes});
   final PomodoroPreset? preset;
   final bool? autoComplete;
+  final int? incrementMinutes;
 }
 
 /// Paquete A: opciones cuando la tarea seleccionada se marca como
@@ -1431,16 +1456,25 @@ class _PresetOverlay extends ConsumerStatefulWidget {
 class _PresetOverlayState extends ConsumerState<_PresetOverlay> {
   late PomodoroPreset _selected = widget.preset;
   late bool _auto = widget.autoComplete;
+  late int _increment;
   late TextEditingController _workCtrl;
   late TextEditingController _shortCtrl;
   late TextEditingController _longCtrl;
   late TextEditingController _cyclesCtrl;
+
+  /// Opciones válidas para el chip "+N min". Cada paso es razonable
+  /// para extender un pomodoro (1 min casi no se nota, 10 ya es bastante).
+  static const _incrementOptions = [1, 2, 5, 10];
 
   @override
   void initState() {
     super.initState();
     // Hidratamos desde el provider (puede aún no tener datos).
     final cfg = ref.read(pomodoroCustomProvider);
+    final storedIncrement = ref.read(pomodoroIncrementProvider);
+    _increment = _incrementOptions.contains(storedIncrement)
+        ? storedIncrement
+        : 5;
     // Si el preset actual es el custom sentinel, lo mantenemos seleccionado
     // con los valores del provider.
     _workCtrl = TextEditingController(text: cfg.work.toString());
@@ -1488,18 +1522,21 @@ class _PresetOverlayState extends ConsumerState<_PresetOverlay> {
           config.cyclesBeforeLong,
         ),
         autoComplete: _auto,
+        incrementMinutes: _increment,
       ));
     } else {
       widget.onResult(_PresetPickResult(
         preset: _selected,
         autoComplete: _auto,
+        incrementMinutes: _increment,
       ));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Stack(
       children: [
         Positioned.fill(
@@ -1597,6 +1634,44 @@ class _PresetOverlayState extends ConsumerState<_PresetOverlay> {
                           'Marca la tarea como hecha al terminar el pomodoro'),
                       value: _auto,
                       onChanged: (v) => setState(() => _auto = v),
+                    ),
+                    // Incremento configurable del chip "+N min". Chips
+                    // segmentados: 1 / 2 / 5 / 10 min. Default 5.
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Extender sesión',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: scheme.onSurface,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Cuánto suma el botón "+N min" cuando necesitás un poco más',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              for (final n in _incrementOptions)
+                                ChoiceChip(
+                                  label: Text('+$n min'),
+                                  selected: _increment == n,
+                                  onSelected: (_) =>
+                                      setState(() => _increment = n),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Padding(

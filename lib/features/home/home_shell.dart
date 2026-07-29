@@ -75,6 +75,8 @@ class HomeShell extends ConsumerWidget {
               tooltip: fab.tooltip,
               onPressed: () {
                 HapticFeedback.selectionClick();
+                // ignore: avoid_print
+                print('[FAB] tap → tooltip="${fab.tooltip}" icon=${fab.icon}');
                 fab.onPressed();
               },
               child: Icon(fab.icon),
@@ -86,6 +88,10 @@ class HomeShell extends ConsumerWidget {
   /// explícitamente porque las callbacks de los FAB necesitan un
   /// BuildContext (no tenemos uno a nivel de clase en ConsumerWidget).
   _FabSpec? _fabForRoute(BuildContext ctx) {
+    // DEBUG: trazar qué location recibe el shell en cada rebuild.
+    // Sacar cuando confirmemos la causa raíz del bug FAB.
+    // ignore: avoid_print
+    print('[FAB] HomeShell._fabForRoute currentLocation="$currentLocation"');
     if (currentLocation == '/') {
       return _FabSpec(
         icon: Icons.add,

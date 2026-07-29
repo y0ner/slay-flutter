@@ -58,7 +58,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // ── Shell con BottomNavigationBar ───────────────────
       ShellRoute(
         builder: (context, state, child) =>
-            HomeShell(currentLocation: state.matchedLocation, child: child),
+            // FIX bug FAB v2: `state.matchedLocation` queda STALE
+            // (devuelve el path del padre sin el parámetro) cuando se
+            // navega con `context.push` a una sub-ruta del shell. Eso
+            // hacía que el FAB en /tasks/:id evaluara `currentLocation
+            // == '/tasks'` (igual al padre) y abriera el editor de
+            // categorías en vez de QuickAddDialog.
+            //
+            // `state.uri.path` y `state.fullPath` SÍ se actualizan
+            // correctamente con push (test `fab_diag_test.dart` lo
+            // confirma). Usamos `state.uri.path` porque es la URI
+            // completa normalizada de la ruta activa.
+            HomeShell(currentLocation: state.uri.path, child: child),
         routes: [
           GoRoute(
             path: '/',

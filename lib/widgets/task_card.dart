@@ -33,6 +33,8 @@ class TaskCard extends ConsumerStatefulWidget {
     required this.onDelete,
     this.onSendToFocus,
     this.category,
+    this.orderNumber,
+    this.reorderIndex,
   });
 
   final Task task;
@@ -42,6 +44,16 @@ class TaskCard extends ConsumerStatefulWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback? onSendToFocus;
+
+  /// Posición 1-based del task en su categoría. Si se pasa, se
+  /// muestra a la izquierda de la card (comunica la "prioridad" del
+  /// usuario de un vistazo, mismo patrón que Slay-Desktop).
+  final int? orderNumber;
+
+  /// Index que `ReorderableListView` necesita para enganchar el drag
+  /// handle. Si se pasa, la card muestra un handle (☰) a la derecha
+  /// que inicia el drag con long-press.
+  final int? reorderIndex;
 
   @override
   ConsumerState<TaskCard> createState() => _TaskCardState();
@@ -120,96 +132,147 @@ class _TaskCardState extends ConsumerState<TaskCard> {
           borderRadius: BorderRadius.circular(20),
           onTap: widget.onTap,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
-            child: Column(
+            padding: const EdgeInsets.fromLTRB(8, 12, 4, 8),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  task.title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    decoration: task.isCompleted
-                        ? TextDecoration.lineThrough
-                        : null,
-                    color: task.isCompleted ? subtle : null,
-                  ),
-                ),
-                if (pomodoroCount > 0) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    '⏱ ${_formatMinutes(totalMinutes)}${_agoLabel(lastSession)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: subtle,
-                      fontWeight: FontWeight.w500,
+                // 1) Número de orden (si vino del caller). Comunica
+                //    la "prioridad" del usuario y queda visible
+                //    incluso en cards reordenadas.
+                if (widget.orderNumber != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 6, 8, 0),
+                    child: SizedBox(
+                      width: 28,
+                      child: Text(
+                        '${widget.orderNumber}',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: task.isCompleted
+                              ? subtle
+                              : Theme.of(context).colorScheme.primary,
+                          height: 1.0,
+                        ),
+                      ),
                     ),
                   ),
-                ],
-                if (task.hasSubtasks) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    '${task.subtaskCount} subtareas',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Divider(height: 1, color: subtle.withValues(alpha: 0.15)),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    if (cat != null) _CategoryChip(name: cat.name, color: catColor),
-                    if (cat != null) const SizedBox(width: 6),
-                    _DateChip(task: task, bg: dateChipColor, color: subtle),
-                    if (pomodoroCount > 0) ...[
-                      const SizedBox(width: 6),
-                      _PomodoroChip(count: pomodoroCount),
-                    ],
-                    const Spacer(),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (widget.onSendToFocus != null && !task.isCompleted)
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            tooltip: 'Enviar a Focus',
-                            onPressed: widget.onSendToFocus,
-                            icon: const Icon(
-                              Icons.timer,
-                              color: Color(0xFF10B981),
-                              size: 18,
-                            ),
-                          ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          tooltip: 'Copiar',
-                          onPressed: _copy,
-                          icon: Icon(
-                            _justCopied ? Icons.check : Icons.content_copy,
-                            color: _justCopied
-                                ? const Color(0xFF10B981)
-                                : Theme.of(context).colorScheme.primary,
-                            size: 18,
+                // 2) Contenido de la card (título + chips + acciones).
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8, top: 4),
+                        child: Text(
+                          task.title,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            decoration: task.isCompleted
+                                ? TextDecoration.lineThrough
+                                : null,
+                            color: task.isCompleted ? subtle : null,
                           ),
                         ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          tooltip: 'Eliminar',
-                          onPressed: widget.onDelete,
-                          icon: Icon(
-                            Icons.delete_outline,
-                            color: Theme.of(context).colorScheme.error,
-                            size: 18,
+                      ),
+                      if (pomodoroCount > 0) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          '⏱ ${_formatMinutes(totalMinutes)}${_agoLabel(lastSession)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: subtle,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
-                    ),
-                  ],
+                      if (task.hasSubtasks) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          '${task.subtaskCount} subtareas',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Divider(height: 1, color: subtle.withValues(alpha: 0.15)),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          if (cat != null) _CategoryChip(name: cat.name, color: catColor),
+                          if (cat != null) const SizedBox(width: 6),
+                          _DateChip(task: task, bg: dateChipColor, color: subtle),
+                          if (pomodoroCount > 0) ...[
+                            const SizedBox(width: 6),
+                            _PomodoroChip(count: pomodoroCount),
+                          ],
+                          const Spacer(),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (widget.onSendToFocus != null && !task.isCompleted)
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  tooltip: 'Enviar a Focus',
+                                  onPressed: widget.onSendToFocus,
+                                  icon: const Icon(
+                                    Icons.timer,
+                                    color: Color(0xFF10B981),
+                                    size: 18,
+                                  ),
+                                ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                tooltip: 'Copiar',
+                                onPressed: _copy,
+                                icon: Icon(
+                                  _justCopied ? Icons.check : Icons.content_copy,
+                                  color: _justCopied
+                                      ? const Color(0xFF10B981)
+                                      : Theme.of(context).colorScheme.primary,
+                                  size: 18,
+                                ),
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                tooltip: 'Eliminar',
+                                onPressed: widget.onDelete,
+                                icon: Icon(
+                                  Icons.delete_outline,
+                                  color: Theme.of(context).colorScheme.error,
+                                  size: 18,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
+                // 3) Drag handle (sólo si el caller pasó reorderIndex).
+                //    Envuelto en ReorderableDragStartListener para
+                //    iniciar drag con long-press sobre el handle.
+                if (widget.reorderIndex != null)
+                  ReorderableDragStartListener(
+                    index: widget.reorderIndex!,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      child: Icon(
+                        Icons.drag_indicator,
+                        color: subtle,
+                        size: 22,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

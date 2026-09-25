@@ -26,25 +26,25 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
   /// Aplica el reorder: actualiza el array local optimistamente, lo
   /// persiste en Supabase (`sort_order` 0..N-1) e invalida el stream.
   ///
-  /// El paquete `reorderable_grid_view` devuelve como `newIndex` el
-  /// índice de la card OBJETIVO (no el slot entre items). Eso difiere
-  /// de `ReorderableListView`. Acá adoptamos la semántica "drop sobre
-  /// el target = el item va a la posición siguiente, debajo en el
-  /// flujo lineal", que es lo que espera el usuario.
-  Future<void> _onReorder(List<Category> list, int oldIndex, int newIndex) async {
+  /// FIX: `reorderable_grid_view` (como `ReorderableListView`) devuelve
+  /// `newIndex` con la semántica estándar de Flutter: si arrastrás un
+  /// item hacia ABAJO (oldIndex < newIndex), el newIndex incluye el
+  /// hueco del item que se removió, así que hay que restar 1 para
+  /// obtener la posición real destino. El código anterior tenía la
+  /// corrección invertida, lo que causaba que las categorías se
+  /// duplicaran en vez de intercambiarse.
+  void _onReorder(List<Category> list, int oldIndex, int newIndex) {
+    // Ajuste estándar de Flutter: cuando el item se mueve hacia abajo,
+    // newIndex viene desplazado +1 por el hueco del item removido.
+    if (oldIndex < newIndex) newIndex -= 1;
     if (oldIndex == newIndex) return;
     final updated = [...list];
     final moved = updated.removeAt(oldIndex);
-    // Tras remover, el target está en:
-    //   newIndex        si newIndex < oldIndex (no se movió)
-    //   newIndex - 1    si newIndex > oldIndex (los posteriores se shifts up)
-    // Insertar DESPUÉS del target:
-    //   newIndex + 1    si newIndex < oldIndex
-    //   newIndex        si newIndex > oldIndex
-    final insertAt = newIndex > oldIndex ? newIndex : newIndex + 1;
-    updated.insert(insertAt, moved);
-    await ref.read(categoryRepositoryProvider).reorder(updated);
-    ref.invalidate(categoriesStreamProvider);
+    updated.insert(newIndex, moved);
+    // Persistimos el nuevo orden con sort_order 0..N-1.
+    ref.read(categoryRepositoryProvider).reorder(updated).then((_) {
+      ref.invalidate(categoriesStreamProvider);
+    });
   }
 
   @override

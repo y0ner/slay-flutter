@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/slay_theme.dart';
+import 'shimmer_loader.dart';
 
 /// Overlay fullscreen que se muestra mientras se está cerrando la sesión.
 /// Tapa el frame de transición (en dark mode se ve negro) y da feedback
@@ -30,16 +31,11 @@ class LogoutOverlay extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Spinner themed con el primary color (verde emerald).
-              SizedBox(
-                width: 44,
-                height: 44,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    theme.colorScheme.primary,
-                  ),
-                ),
+              // Spinner shimmer con el primary color (verde emerald).
+              ShimmerLoader(
+                size: 44,
+                strokeWidth: 3,
+                color: theme.colorScheme.primary,
               ),
               const SizedBox(height: 20),
               Text(

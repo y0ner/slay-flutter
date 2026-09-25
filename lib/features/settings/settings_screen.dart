@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:device_calendar/device_calendar.dart';
 
 import '../../core/state/logging_out_provider.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../../notifications/calendar_service.dart';
+import '../../widgets/shimmer_loader.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -82,6 +85,11 @@ class SettingsScreen extends ConsumerWidget {
         ),
         const Divider(),
 
+        // ── Calendario & Recordatorios ───────────────────
+        const _CalendarSyncSection(),
+
+        const Divider(),
+
         // ── Información ──────────────────────────────────
         const Padding(
           padding: EdgeInsets.fromLTRB(24, 8, 24, 4),
@@ -130,15 +138,15 @@ class _LogoutTileState extends ConsumerState<_LogoutTile> {
   Future<void> _confirmAndSignOut() async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('Cerrar sesión'),
         content: const Text('¿Estás seguro?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => Navigator.of(dialogCtx).pop(false),
               child: const Text('Cancelar')),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () => Navigator.of(dialogCtx).pop(true),
               child: const Text('Salir')),
         ],
       ),
@@ -162,22 +170,27 @@ class _LogoutTileState extends ConsumerState<_LogoutTile> {
     setState(() => _loading = true);
     ref.read(loggingOutProvider.notifier).state = true;
     try {
-      await ref.read(authRepositoryProvider).signOut();
-      // El router redirect se encarga de navegar a /login cuando
-      // currentSession == null. Dejamos el overlay activo durante un
-      // momento para tapar la transición post-redirect; el timer lo
-      // apaga cuando ya estamos en /login.
-      Future.delayed(const Duration(milliseconds: 600), () {
-        if (ref.read(loggingOutProvider)) {
-          ref.read(loggingOutProvider.notifier).state = false;
-        }
-      });
-    } catch (e) {
-      if (!mounted) return;
-      ref.read(loggingOutProvider.notifier).state = false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cerrar sesión: $e')),
-      );
+      // Timeout defensivo de 2s para evitar que una red lenta o caída
+      // de Supabase congele la UI indefinidamente.
+      await ref
+          .read(authRepositoryProvider)
+          .signOut()
+          .timeout(const Duration(seconds: 2), onTimeout: () {});
+    } catch (_) {
+      // Si falla la revocación remota en Supabase, garantizamos que el
+      // usuario pueda salir igual hacia /login.
+    } finally {
+      // El ref puede estar invalidado si el redirect de GoRouter ya
+      // destruyó este widget. Lo protegemos con try-catch; la red de
+      // seguridad en _SlayAppState (authStateChangesProvider listener)
+      // se encarga de resetear loggingOutProvider en ese caso.
+      try {
+        ref.read(loggingOutProvider.notifier).state = false;
+      } catch (_) {}
+      if (mounted) {
+        setState(() => _loading = false);
+        context.go('/login');
+      }
     }
   }
 
@@ -186,15 +199,183 @@ class _LogoutTileState extends ConsumerState<_LogoutTile> {
     final error = Theme.of(context).colorScheme.error;
     return ListTile(
       leading: _loading
-          ? SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2.5, color: error),
-            )
+          ? ShimmerLoader(size: 24, strokeWidth: 2.5, color: error)
           : Icon(Icons.logout, color: error),
       title: Text('Cerrar sesión', style: TextStyle(color: error)),
       enabled: !_loading,
       onTap: _loading ? null : _confirmAndSignOut,
+    );
+  }
+}
+
+/// Sección de configuración y sincronización con Google Calendar.
+class _CalendarSyncSection extends StatefulWidget {
+  const _CalendarSyncSection();
+
+  @override
+  State<_CalendarSyncSection> createState() => _CalendarSyncSectionState();
+}
+
+class _CalendarSyncSectionState extends State<_CalendarSyncSection> {
+  bool _syncEnabled = false;
+  String? _calendarName;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final enabled = await CalendarService.instance.isSyncEnabled();
+    final name = await CalendarService.instance.getSelectedCalendarName();
+    if (mounted) {
+      setState(() {
+        _syncEnabled = enabled;
+        _calendarName = name;
+      });
+    }
+  }
+
+  Future<void> _toggleSync(bool value) async {
+    if (value) {
+      setState(() => _loading = true);
+      final granted = await CalendarService.instance.requestPermissions();
+      if (!granted) {
+        if (mounted) {
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Se necesita permiso de calendario para sincronizar con Google Calendar.'),
+            ),
+          );
+        }
+        return;
+      }
+      await CalendarService.instance.setSyncEnabled(true);
+      // Buscar calendario automáticamente
+      final calendar = await CalendarService.instance.getActiveCalendar();
+      if (mounted) {
+        setState(() {
+          _syncEnabled = true;
+          _calendarName = calendar?.name;
+          _loading = false;
+        });
+      }
+    } else {
+      await CalendarService.instance.setSyncEnabled(false);
+      if (mounted) {
+        setState(() => _syncEnabled = false);
+      }
+    }
+  }
+
+  Future<void> _selectCalendar() async {
+    setState(() => _loading = true);
+    final calendars = await CalendarService.instance.getAvailableCalendars();
+    if (!mounted) return;
+    setState(() => _loading = false);
+
+    if (calendars.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se encontraron calendarios editables.')),
+      );
+      return;
+    }
+
+    final selected = await showModalBottomSheet<Calendar>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Seleccionar calendario',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            ),
+            for (final cal in calendars)
+              ListTile(
+                leading: const Icon(Icons.calendar_today),
+                title: Text(cal.name ?? 'Sin nombre'),
+                subtitle: Text(cal.accountName ?? ''),
+                onTap: () => Navigator.pop(context, cal),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (selected != null && selected.id != null) {
+      await CalendarService.instance.setSelectedCalendar(
+        selected.id!,
+        selected.name ?? 'Calendario',
+      );
+      if (mounted) {
+        setState(() => _calendarName = selected.name);
+      }
+    }
+  }
+
+  Future<void> _testReminder() async {
+    setState(() => _loading = true);
+    final success = await CalendarService.instance.createTestReminder();
+    if (mounted) {
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success
+              ? 'Recordatorio de prueba creado. Revisa tu calendario en 2 minutos.'
+              : 'Error al crear recordatorio de prueba.'),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(24, 8, 24, 4),
+          child: Text('CALENDARIO & RECORDATORIOS',
+              style: TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+        ),
+        SwitchListTile(
+          secondary: _loading
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.calendar_month_outlined),
+          title: const Text('Sincronizar con Google Calendar'),
+          subtitle: Text(_syncEnabled
+              ? (_calendarName ?? 'Calendario seleccionado')
+              : 'Enviar recordatorios al calendario del dispositivo'),
+          value: _syncEnabled,
+          onChanged: _loading ? null : _toggleSync,
+        ),
+        if (_syncEnabled) ...[
+          ListTile(
+            leading: const Icon(Icons.swap_horiz),
+            title: const Text('Cambiar calendario'),
+            subtitle: Text(_calendarName ?? 'No seleccionado'),
+            onTap: _loading ? null : _selectCalendar,
+          ),
+          ListTile(
+            leading: const Icon(Icons.notifications_active_outlined),
+            title: const Text('Probar recordatorio'),
+            subtitle: const Text('Crea un evento de prueba en 2 minutos'),
+            onTap: _loading ? null : _testReminder,
+          ),
+        ],
+      ],
     );
   }
 }

@@ -31,8 +31,9 @@ dependencies:
   # ── Persistencia local (tema, calendar view) ────────────
   shared_preferences: ^2.3.3
 
-  # ── Notificaciones / recordatorios ───────────────────────
+  # ── Notificaciones / recordatorios / calendario ──────────
   flutter_local_notifications: ^17.2.4
+  device_calendar: ^4.3.3
   flutter_timezone: ^3.0.1
   timezone: ^0.9.4
 

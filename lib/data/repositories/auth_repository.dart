@@ -21,8 +21,14 @@ class AuthRepository {
   Future<AuthResponse> signUp(String email, String password) =>
       _client.auth.signUp(email: email, password: password);
 
-  /// Cierra la sesión.
-  Future<void> signOut() => _client.auth.signOut();
+  /// Cierra la sesión local e invalida credenciales.
+  Future<void> signOut() async {
+    try {
+      await _client.auth.signOut(scope: SignOutScope.local);
+    } catch (_) {
+      // Ignorar errores de red remota; la sesión local queda invalidada de todos modos.
+    }
+  }
 }
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {

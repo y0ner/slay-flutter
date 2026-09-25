@@ -1,0 +1,5 @@
+# 🐛 Bugs a Solucionar
+
+- [ ] En **Mi Día**: cuando se va a crear una tarea no sale la opción para crearla sin categoría. Por defecto esta debería ser la opción. Cuando el usuario cree una tarea sin categoría, esta se visualizará en Mi Día (la categoría equivale al día de hoy).
+
+- [ ] Revisar de manera urgente en qué commit quedó la implementación donde cada vez que se creaba una tarea con recordatorio, esta se enviaba al calendario de Google y notificaba desde allí (ya que implementar notificaciones propias en la app es muy complejo).

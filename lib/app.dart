@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/router/app_router.dart';
 import 'core/state/logging_out_provider.dart';
@@ -42,6 +43,16 @@ class _SlayAppState extends ConsumerState<SlayApp> {
     // lo lea, no abre DB ni se suscribe a connectivity.
     ref.watch(syncServiceProvider);
     final loggingOut = ref.watch(loggingOutProvider);
+
+    // Red de seguridad: si el _LogoutTile fue destruido por el redirect
+    // de GoRouter ANTES de que su finally block pudiera resetear el
+    // provider, este listener (que vive en _SlayAppState, por ENCIMA del
+    // Navigator) garantiza que el overlay se oculta.
+    ref.listen<AsyncValue<AuthState>>(authStateChangesProvider, (prev, next) {
+      if (next.valueOrNull?.event == AuthChangeEvent.signedOut) {
+        ref.read(loggingOutProvider.notifier).state = false;
+      }
+    });
 
     return MaterialApp.router(
       title: 'Slay',

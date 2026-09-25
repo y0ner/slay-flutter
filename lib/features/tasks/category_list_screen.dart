@@ -204,8 +204,9 @@ class _BrowseGrid extends ConsumerWidget {
   }
 }
 
-/// Grid de reorder: cada tile muestra la CategoryCard real (con un
-/// overlay con handle visible) y se arrastra con long-press.
+/// Grid de reorder: cada tile muestra la CategoryCard real.
+/// Se arrastra con long-press en cualquier parte del tile (el paquete
+/// `reorderable_grid_view` maneja la detección de drag internamente).
 class _ReorderGrid extends StatelessWidget {
   const _ReorderGrid({required this.list, required this.onReorder});
   final List<Category> list;
@@ -226,28 +227,9 @@ class _ReorderGrid extends StatelessWidget {
       onReorder: onReorder,
       itemBuilder: (context, i) {
         final c = list[i];
-        return Stack(
+        return CategoryCard(
           key: ValueKey(c.id),
-          children: [
-            Positioned.fill(child: CategoryCard(category: c)),
-            // Overlay con handle, alineado top-left. Captura el drag.
-            Positioned(
-              top: 6,
-              left: 6,
-              child: ReorderableDragStartListener(
-                index: i,
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.drag_indicator,
-                      color: Colors.white, size: 20),
-                ),
-              ),
-            ),
-          ],
+          category: c,
         );
       },
     );

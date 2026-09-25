@@ -70,21 +70,17 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
     }
   }
 
-  /// `reorderable_grid_view` llama a `onReorder(_dragIndex, _dropIndex)`
-  /// donde `_dropIndex` es el índice del item OBJETIVO (no un slot
-  /// entre items como en `ReorderableListView`). Para insertar el
-  /// item arrastrado DESPUÉS del objetivo:
-  ///   - newIndex > oldIndex → insertar en newIndex (el objetivo ya
-  ///     se corrió una posición arriba por el removeAt)
-  ///   - newIndex < oldIndex → insertar en newIndex + 1 (el objetivo
-  ///     no se movió, hay que ir después de él)
+  /// `reorderable_grid_view` devuelve como `newIndex` la posición
+  /// FINAL donde el item debe quedar (no un slot entre items).
+  /// Ejemplo oficial del paquete:
+  ///   final element = data.removeAt(oldIndex);
+  ///   data.insert(newIndex, element);
   void _onReorder(int oldIndex, int newIndex) {
     final list = _localList;
     if (list == null || oldIndex == newIndex) return;
     final updated = [...list];
     final moved = updated.removeAt(oldIndex);
-    final insertAt = newIndex > oldIndex ? newIndex : newIndex + 1;
-    updated.insert(insertAt, moved);
+    updated.insert(newIndex, moved);
     setState(() => _localList = updated);
   }
 

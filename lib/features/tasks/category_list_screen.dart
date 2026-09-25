@@ -18,15 +18,28 @@ class CategoryListScreen extends ConsumerStatefulWidget {
 class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
   bool _editMode = false;
   List<Category>? _localList;
+  Future<void>? _pendingReorder;
 
   void _toggleEdit() {
     if (_editMode) {
-      // Al salir del modo edición, si había lista local ya está
-      // persistida (cada drag ya escribió a Supabase). Limpiamos.
-      setState(() {
-        _editMode = false;
-        _localList = null;
-      });
+      // Al salir: si hay un reorder pendiente en Supabase, esperamos
+      // a que termine y recién después limpiamos _localList. Así el
+      // grid nunca muestra datos viejos del stream.
+      if (_pendingReorder != null) {
+        _pendingReorder!.then((_) {
+          if (!mounted) return;
+          ref.invalidate(categoriesStreamProvider);
+          setState(() {
+            _editMode = false;
+            _localList = null;
+          });
+        });
+      } else {
+        setState(() {
+          _editMode = false;
+          _localList = null;
+        });
+      }
     } else {
       // Al entrar, capturamos el estado actual del stream como lista
       // local para que los drags sucesivos trabajen sobre la versión
@@ -54,9 +67,12 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
     updated.insert(newIndex, moved);
     // UI optimista: actualizamos la lista local al instante.
     setState(() => _localList = updated);
-    // Persistimos a Supabase en background.
-    ref.read(categoryRepositoryProvider).reorder(updated).then((_) {
+    // Persistimos a Supabase en background. Guardamos el Future para
+    // que _toggleEdit pueda esperarlo antes de limpiar.
+    _pendingReorder =
+        ref.read(categoryRepositoryProvider).reorder(updated).then((_) {
       ref.invalidate(categoriesStreamProvider);
+      _pendingReorder = null;
     });
   }
 

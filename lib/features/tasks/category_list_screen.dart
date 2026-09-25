@@ -55,17 +55,13 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
           list[i].copyWith(sortOrder: i),
       ];
       await ref.read(categoryRepositoryProvider).reorder(renumbered);
-      // Invalidar para que el stream re-fetchee. NO limpiamos
-      // _localList todavía — lo hacemos cuando el stream confirme.
       ref.invalidate(categoriesStreamProvider);
-    } catch (_) {
-      // Error de red: salimos igual, el stream conservará el último
-      // orden conocido. _localList se limpia abajo.
-    }
+    } catch (_) {}
     if (mounted) {
       setState(() {
         _saving = false;
         _editMode = false;
+        _localList = null; // ← LIMPIAR para que el próximo edit use datos frescos
       });
     }
   }
@@ -127,22 +123,10 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (list) {
-          // Fuente de verdad: _localList mientras exista (durante
-          // edición Y hasta que el stream confirme el nuevo orden
-          // después de guardar). Si no hay _localList, usar stream.
-          final displayList = _localList ?? list;
-          // Cuando el stream trae datos nuevos que coinciden con lo
-          // que persistimos, limpiamos _localList para no usarlo más.
-          if (_localList != null &&
-              !_editMode &&
-              !_saving &&
-              list.isNotEmpty &&
-              list.first.id == _localList!.first.id &&
-              list.length == _localList!.length) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() => _localList = null);
-            });
-          }
+          // Durante edición usamos _localList (orden local).
+          // Fuera de edición usamos el stream (datos de Supabase).
+          final displayList =
+              _editMode ? (_localList ?? list) : list;
           return RefreshIndicator(
             onRefresh: () async =>
                 ref.invalidate(categoriesStreamProvider),

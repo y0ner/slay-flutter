@@ -208,11 +208,13 @@ class CategoryRepository {
   }
 
   Future<void> reorder(List<Category> ordered) async {
-    for (var i = 0; i < ordered.length; i++) {
-      await _client
-          .from('categories')
-          .update({'sort_order': i}).eq('id', ordered[i].id);
-    }
+    // Paralelizar: todas las updates en vez de una por una.
+    await Future.wait([
+      for (var i = 0; i < ordered.length; i++)
+        _client
+            .from('categories')
+            .update({'sort_order': i}).eq('id', ordered[i].id),
+    ]);
   }
 
   bool _isNetwork(Object e) => SyncService.isNetworkError(e);

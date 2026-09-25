@@ -16,32 +16,45 @@ class CategoryListScreen extends ConsumerStatefulWidget {
 }
 
 class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
-  /// Modo edición: oculta FAB + handler de crear; tap y long-press
-  /// deshabilitados en cada card; cada tile se vuelve draggable.
-  /// Sale con el botón ✓ del AppBar.
   bool _editMode = false;
+  List<Category>? _localList;
 
-  void _toggleEdit() => setState(() => _editMode = !_editMode);
+  void _toggleEdit() {
+    if (_editMode) {
+      // Al salir del modo edición, si había lista local ya está
+      // persistida (cada drag ya escribió a Supabase). Limpiamos.
+      setState(() {
+        _editMode = false;
+        _localList = null;
+      });
+    } else {
+      // Al entrar, capturamos el estado actual del stream como lista
+      // local para que los drags sucesivos trabajen sobre la versión
+      // más reciente (no esperando al roundtrip de Supabase).
+      final asyncCats = ref.read(categoriesStreamProvider);
+      final currentList = asyncCats.valueOrNull ?? [];
+      setState(() {
+        _editMode = true;
+        _localList = List<Category>.from(currentList);
+      });
+    }
+  }
 
-  /// Aplica el reorder: actualiza el array local optimistamente, lo
-  /// persiste en Supabase (`sort_order` 0..N-1) e invalida el stream.
-  ///
-  /// FIX: `reorderable_grid_view` (como `ReorderableListView`) devuelve
-  /// `newIndex` con la semántica estándar de Flutter: si arrastrás un
-  /// item hacia ABAJO (oldIndex < newIndex), el newIndex incluye el
-  /// hueco del item que se removió, así que hay que restar 1 para
-  /// obtener la posición real destino. El código anterior tenía la
-  /// corrección invertida, lo que causaba que las categorías se
-  /// duplicaran en vez de intercambiarse.
-  void _onReorder(List<Category> list, int oldIndex, int newIndex) {
-    // Ajuste estándar de Flutter: cuando el item se mueve hacia abajo,
-    // newIndex viene desplazado +1 por el hueco del item removido.
+  /// FIX: `reorderable_grid_view` usa la misma semántica de índices
+  /// que `ReorderableListView` de Flutter: cuando arrastrás un item
+  /// hacia ABAJO (oldIndex < newIndex), el newIndex incluye el hueco
+  /// del item que se removió, así que hay que restar 1.
+  void _onReorder(int oldIndex, int newIndex) {
+    final list = _localList;
+    if (list == null) return;
     if (oldIndex < newIndex) newIndex -= 1;
     if (oldIndex == newIndex) return;
     final updated = [...list];
     final moved = updated.removeAt(oldIndex);
     updated.insert(newIndex, moved);
-    // Persistimos el nuevo orden con sort_order 0..N-1.
+    // UI optimista: actualizamos la lista local al instante.
+    setState(() => _localList = updated);
+    // Persistimos a Supabase en background.
     ref.read(categoryRepositoryProvider).reorder(updated).then((_) {
       ref.invalidate(categoriesStreamProvider);
     });
@@ -79,17 +92,20 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
       body: asyncCats.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
-        data: (list) => RefreshIndicator(
-          onRefresh: () async => ref.invalidate(categoriesStreamProvider),
-          child: list.isEmpty
-              ? const _EmptyState()
-              : _editMode
-                  ? _ReorderGrid(
-                      list: list,
-                      onReorder: (oldI, newI) => _onReorder(list, oldI, newI),
-                    )
-                  : _BrowseGrid(list: list),
-        ),
+        data: (list) {
+          final displayList = _editMode ? (_localList ?? list) : list;
+          return RefreshIndicator(
+            onRefresh: () async => ref.invalidate(categoriesStreamProvider),
+            child: displayList.isEmpty
+                ? const _EmptyState()
+                : _editMode
+                    ? _ReorderGrid(
+                        list: displayList,
+                        onReorder: _onReorder,
+                      )
+                    : _BrowseGrid(list: displayList),
+          );
+        },
       ),
     );
   }

@@ -17,33 +17,38 @@ class CategoryListScreen extends ConsumerStatefulWidget {
 
 class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
   bool _editMode = false;
+  bool _saving = false;
   List<Category>? _localList;
-  Future<void>? _pendingReorder;
 
-  void _toggleEdit() {
+  Future<void> _toggleEdit() async {
     if (_editMode) {
-      // Al salir: si hay un reorder pendiente en Supabase, esperamos
-      // a que termine y recién después limpiamos _localList. Así el
-      // grid nunca muestra datos viejos del stream.
-      if (_pendingReorder != null) {
-        _pendingReorder!.then((_) {
-          if (!mounted) return;
+      // FORZAR guardado: tomamos _localList tal como quedó tras los
+      // drags y la persistimos a Supabase. No salimos hasta que
+      // Supabase confirme. Así el orden del modo edición es el que
+      // queda guardado "a toda costa".
+      if (_localList != null && _localList!.isNotEmpty) {
+        setState(() => _saving = true);
+        try {
+          // Renumeramos sort_order 0..N-1 por las dudas.
+          final renumbered = [
+            for (var i = 0; i < _localList!.length; i++)
+              _localList![i].copyWith(sortOrder: i),
+          ];
+          await ref.read(categoryRepositoryProvider).reorder(renumbered);
           ref.invalidate(categoriesStreamProvider);
-          setState(() {
-            _editMode = false;
-            _localList = null;
-          });
-        });
-      } else {
+        } catch (_) {
+          // Si falla la red, el stream conservará el último orden
+          // conocido. El user puede reintentar.
+        }
+        if (mounted) setState(() => _saving = false);
+      }
+      if (mounted) {
         setState(() {
           _editMode = false;
           _localList = null;
         });
       }
     } else {
-      // Al entrar, capturamos el estado actual del stream como lista
-      // local para que los drags sucesivos trabajen sobre la versión
-      // más reciente (no esperando al roundtrip de Supabase).
       final asyncCats = ref.read(categoriesStreamProvider);
       final currentList = asyncCats.valueOrNull ?? [];
       setState(() {
@@ -65,15 +70,7 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
     final updated = [...list];
     final moved = updated.removeAt(oldIndex);
     updated.insert(newIndex, moved);
-    // UI optimista: actualizamos la lista local al instante.
     setState(() => _localList = updated);
-    // Persistimos a Supabase en background. Guardamos el Future para
-    // que _toggleEdit pueda esperarlo antes de limpiar.
-    _pendingReorder =
-        ref.read(categoryRepositoryProvider).reorder(updated).then((_) {
-      ref.invalidate(categoriesStreamProvider);
-      _pendingReorder = null;
-    });
   }
 
   @override
@@ -84,14 +81,24 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
       appBar: AppBar(
         title: const Text('Tareas'),
         actions: [
-          asyncCats.maybeWhen(
-            data: (list) => list.length > 1
-                ? IconButton(
-                    tooltip: _editMode ? 'Listo' : 'Reordenar',
-                    icon: Icon(_editMode ? Icons.check : Icons.reorder),
-                    onPressed: _toggleEdit,
-                  )
-                : const SizedBox.shrink(),
+          if (_saving)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            asyncCats.maybeWhen(
+              data: (list) => list.length > 1
+                  ? IconButton(
+                      tooltip: _editMode ? 'Guardar' : 'Reordenar',
+                      icon: Icon(_editMode ? Icons.check : Icons.reorder),
+                      onPressed: _toggleEdit,
+                    )
+                  : const SizedBox.shrink(),
             orElse: () => const SizedBox.shrink(),
           ),
         ],

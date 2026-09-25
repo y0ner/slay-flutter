@@ -14,9 +14,26 @@ class CategoryRepository {
   final SyncService? syncService;
   final AppDatabase? db;
 
+  StreamController<List<Category>>? _activeController;
+  Timer? _debounceTimer;
+
+  void _scheduleRefresh(StreamController<List<Category>> controller) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      _refresh(controller);
+    });
+  }
+
   /// Stream reactivo con suscripción realtime a la tabla categories.
+  ///
+  /// FIX contador desactualizado: cada card muestra `task_count` (via
+  /// `tasks:tasks(count)`), pero antes sólo nos suscribíamos a la tabla
+  /// `categories`. Al crear/borrar una tarea la categoría no cambiaba →
+  /// el stream no se refrescaba y el número quedaba viejo hasta un
+  /// reload manual. Ahora también escuchamos cambios en `tasks`.
   Stream<List<Category>> watchCategories() {
     final controller = StreamController<List<Category>>.broadcast();
+    _activeController = controller;
     _refresh(controller);
 
     final channel = _client
@@ -25,12 +42,26 @@ class CategoryRepository {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'categories',
-          callback: (_) => _refresh(controller),
+          callback: (_) => _scheduleRefresh(controller),
+        )
+        .subscribe();
+
+    // Los counts de tareas viven en la tabla `tasks`.
+    final tasksChannel = _client
+        .channel('public:categories-task-counts')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'tasks',
+          callback: (_) => _scheduleRefresh(controller),
         )
         .subscribe();
 
     controller.onCancel = () async {
+      _debounceTimer?.cancel();
+      if (_activeController == controller) _activeController = null;
       await _client.removeChannel(channel);
+      await _client.removeChannel(tasksChannel);
       await controller.close();
     };
     return controller.stream;

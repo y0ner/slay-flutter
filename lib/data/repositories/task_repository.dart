@@ -153,21 +153,24 @@ class TaskRepository {
   /// Si falla por red y `syncService` está disponible, encola la op
   /// y devuelve un Task local con `isLocal = true` para feedback
   /// optimista en la UI.
+  /// [categoryId] es OPCIONAL: null/'' crea una tarea "Sin categoría".
   Future<Task> create({
     required String title,
-    required String categoryId,
+    String? categoryId,
     int sortOrder = 0,
     DateTime? date,
     DateTime? reminder,
   }) async {
+    final catId =
+        (categoryId == null || categoryId.isEmpty) ? null : categoryId;
     final payload = <String, dynamic>{
       'title': title,
-      'category_id': categoryId,
       'status': TaskStatus.pendiente,
       'date': (reminder ?? date)?.toIso8601String(),
       'reminder': reminder?.toIso8601String(),
       'sort_order': sortOrder,
     };
+    if (catId != null) payload['category_id'] = catId;
     try {
       final res = await _client.from('tasks').insert(payload).select().single();
       return Task.fromJson(Map<String, dynamic>.from(res));
@@ -184,7 +187,7 @@ class TaskRepository {
           title: title,
           status: TaskStatus.pendiente,
           date: date,
-          categoryId: categoryId,
+          categoryId: catId,
           sortOrder: sortOrder,
           reminder: reminder,
           isLocal: true,

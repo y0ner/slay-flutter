@@ -106,7 +106,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final configured = SupabaseConfig.isConfigured;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
 
     const emeraldAccent = Color(0xFF10B981);
     const emeraldLight = Color(0xFF34D399);
@@ -117,10 +116,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: EdgeInsets.symmetric(
+            // FIX perf: Scaffold ya redimensiona el body cuando se abre
+            // el teclado (resizeToAvoidBottomInset por defecto). Depender
+            // de `viewInsets` acá provocaba un rebuild completo en CADA
+            // frame de la animación del teclado.
+            padding: const EdgeInsets.symmetric(
               horizontal: 24,
               vertical: 24,
-            ).copyWith(bottom: 24 + keyboardInset),
+            ),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
               child: _LoginCard(

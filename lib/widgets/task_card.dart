@@ -203,15 +203,23 @@ class _TaskCardState extends ConsumerState<TaskCard> {
                       Divider(height: 1, color: subtle.withValues(alpha: 0.15)),
                       const SizedBox(height: 6),
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          if (cat != null) _CategoryChip(name: cat.name, color: catColor),
-                          if (cat != null) const SizedBox(width: 6),
-                          _DateChip(task: task, bg: dateChipColor, color: subtle),
-                          if (pomodoroCount > 0) ...[
-                            const SizedBox(width: 6),
-                            _PomodoroChip(count: pomodoroCount),
-                          ],
-                          const Spacer(),
+                          Expanded(
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (cat != null)
+                                  _CategoryChip(name: cat.name, color: catColor),
+                                _DateChip(task: task, bg: dateChipColor, color: subtle),
+                                if (pomodoroCount > 0)
+                                  _PomodoroChip(count: pomodoroCount),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 4),
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [

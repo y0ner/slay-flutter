@@ -90,7 +90,8 @@ class HomeShell extends ConsumerWidget {
       return _FabSpec(
         icon: Icons.add,
         tooltip: 'Nueva tarea',
-        onPressed: () => _quickAddTask(ctx, reminderToday: true),
+        onPressed: () => _quickAddTask(ctx,
+            reminderToday: true, markForToday: true),
       );
     }
     if (currentLocation == '/calendar') {
@@ -119,7 +120,7 @@ class HomeShell extends ConsumerWidget {
   }
 
   void _quickAddTask(BuildContext ctx,
-      {bool reminderToday = false, String? categoryId}) {
+      {bool reminderToday = false, String? categoryId, bool markForToday = false}) {
     final initialReminder = reminderToday
         ? DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)
         : null;
@@ -128,6 +129,7 @@ class HomeShell extends ConsumerWidget {
       builder: (_) => _QuickAddDialog(
         initialReminder: initialReminder,
         initialCategoryId: categoryId,
+        markForToday: markForToday,
       ),
     );
   }
@@ -160,12 +162,17 @@ class _FabSpec {
 }
 
 class _QuickAddDialog extends ConsumerStatefulWidget {
-  const _QuickAddDialog({this.initialReminder, this.initialCategoryId});
+  const _QuickAddDialog({
+    this.initialReminder,
+    this.initialCategoryId,
+    this.markForToday = false,
+  });
   final DateTime? initialReminder;
 
   /// Si viene del shell con `/tasks/:id`, la categoría ya está fijada
   /// y el dropdown se muestra deshabilitado.
   final String? initialCategoryId;
+  final bool markForToday;
 
   @override
   ConsumerState<_QuickAddDialog> createState() => _QuickAddDialogState();
@@ -195,28 +202,25 @@ class _QuickAddDialogState extends ConsumerState<_QuickAddDialog> {
     setState(() => _saving = true);
     try {
       final repo = ref.read(taskRepositoryProvider);
-      // Categoría: si vino fijada desde el shell (ruta /tasks/:id),
-      // usarla; si no, la seleccionada en el dropdown o la primera.
-      final catId = widget.initialCategoryId ??
-          _categoryId ??
-          (categories.isNotEmpty ? categories.first.id : '');
-      if (catId.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Crea primero una categoría')),
-          );
-        }
-        return;
-      }
+      // FIX: la categoría es OPCIONAL. '' = Sin categoría.
+      final selected = widget.initialCategoryId ??
+          ((_categoryId == null || _categoryId!.isEmpty) ? null : _categoryId);
       final created = await repo.create(
         title: _ctrl.text.trim(),
-        categoryId: catId,
+        categoryId: selected,
         reminder: _reminder,
+        date: widget.markForToday
+            ? (() {
+                final now = DateTime.now();
+                return DateTime(now.year, now.month, now.day);
+              })()
+            : null,
       );
       // Refrescar UI: realtime puede tardar ms, esto asegura feedback
       // inmediato (cache local + lista visible).
       ref.invalidate(tasksStreamProvider);
       ref.invalidate(cachedTasksStreamProvider);
+      ref.invalidate(categoriesStreamProvider);
       // Si la tarea quedó con id local (no se pudo subir a Supabase),
       // persistir en cache para feedback inmediato en la UI.
       if (created.isLocal) {
@@ -286,15 +290,7 @@ class _QuickAddDialogState extends ConsumerState<_QuickAddDialog> {
               onSubmitted: (_) => _save(list),
             ),
             const SizedBox(height: 12),
-            if (list.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('Crea primero una categoría'),
-              )
-            else if (fixedCategory != null)
-              // Categoría fijada por la ruta: la mostramos como
-              // dropdown deshabilitado para que el user sepa dónde
-              // va a parar la tarea.
+            if (fixedCategory != null)
               DropdownButtonFormField<String>(
                 value: fixedCategory.id,
                 decoration: const InputDecoration(labelText: 'Categoría'),
@@ -308,9 +304,15 @@ class _QuickAddDialogState extends ConsumerState<_QuickAddDialog> {
               )
             else
               DropdownButtonFormField<String>(
-                value: _categoryId ?? list.first.id,
-                decoration: const InputDecoration(labelText: 'Categoría'),
+                value: _categoryId ?? '',
+                decoration:
+                    const InputDecoration(labelText: 'Categoría (opcional)'),
                 items: [
+                  const DropdownMenuItem(
+                    value: '',
+                    child: Text('Sin categoría',
+                        style: TextStyle(fontStyle: FontStyle.italic)),
+                  ),
                   for (final c in list)
                     DropdownMenuItem(value: c.id, child: Text(c.name)),
                 ],
@@ -321,7 +323,7 @@ class _QuickAddDialogState extends ConsumerState<_QuickAddDialog> {
               children: [
                 Expanded(
                   child: Text(_reminder == null
-                      ? 'Sin recordatorio (no aparece en Mi Día)'
+                      ? (widget.markForToday ? 'Aparece en Mi Día (sin recordatorio)' : 'Sin recordatorio (no aparece en Mi Día)')
                       : 'Recordatorio: ${_reminder!.day}/${_reminder!.month}/${_reminder!.year} ${_reminder!.hour.toString().padLeft(2, '0')}:${_reminder!.minute.toString().padLeft(2, '0')}'),
                 ),
                 if (_reminder != null)

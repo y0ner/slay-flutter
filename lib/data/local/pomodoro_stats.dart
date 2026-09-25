@@ -378,16 +378,22 @@ final pomodoroIncrementProvider =
 
 // ── Persistencia del timer en curso (Paquete B) ──────────
 
-/// Snapshot del estado del timer para sobrevivir cierres de la app.
+/// Snapshot del estado del timer para sobrevivir cierres de la app,
+/// cambios de tab y procesos congelados por el SO.
 ///
-/// Sólo persiste UNA sesión a la vez (no histórico). Si la app se mata
-/// durante un pomodoro, al reabrir ofrece "Recuperar" o "Descartar".
+/// **Diseño wall-clock**: en vez de guardar "cuánto quedaba", cuando la
+/// sesión corre se guarda el timestamp ABSOLUTO de fin (`endAtMs`). Así
+/// el tiempo restante se calcula contra el reloj del sistema y el conteo
+/// es correcto aunque la app haya estado en background, congelada o
+/// directamente muerta. Cuando está pausada se guarda el remaining fijo.
 class PomodoroSessionSnapshot {
   const PomodoroSessionSnapshot({
-    required this.kind, // 'work' | 'shortBreak' | 'longBreak'
-    required this.remainingSeconds,
+    required this.kind,
     required this.totalSeconds,
     required this.startedAtMs,
+    required this.running,
+    required this.endAtMs,
+    required this.pausedRemainingSec,
     required this.taskId,
     required this.taskTitle,
     required this.presetLabel,
@@ -396,9 +402,11 @@ class PomodoroSessionSnapshot {
   });
 
   final String kind;
-  final int remainingSeconds;
   final int totalSeconds;
   final int startedAtMs;
+  final bool running;
+  final int endAtMs;
+  final int pausedRemainingSec;
   final String taskId;
   final String taskTitle;
   final String presetLabel;
@@ -407,9 +415,11 @@ class PomodoroSessionSnapshot {
 
   Map<String, dynamic> toJson() => {
         'kind': kind,
-        'remaining': remainingSeconds,
         'total': totalSeconds,
         'startedAt': startedAtMs,
+        'running': running,
+        'endAt': endAtMs,
+        'pausedRemaining': pausedRemainingSec,
         'taskId': taskId,
         'taskTitle': taskTitle,
         'preset': presetLabel,
@@ -420,33 +430,43 @@ class PomodoroSessionSnapshot {
   static PomodoroSessionSnapshot? fromJson(String raw) {
     try {
       final m = json.decode(raw) as Map<String, dynamic>;
+      final startedAtMs = (m['startedAt'] as num).toInt();
+      final hasNewFormat = m.containsKey('running');
+      final running =
+          hasNewFormat ? (m['running'] as bool? ?? false) : true;
+      var endAtMs = (m['endAt'] as num?)?.toInt() ?? 0;
+      var pausedRemainingSec =
+          (m['pausedRemaining'] as num?)?.toInt() ?? 0;
+      if (!hasNewFormat) {
+        final legacyRemaining = (m['remaining'] as num).toInt();
+        endAtMs = startedAtMs + legacyRemaining * 1000;
+        pausedRemainingSec = 0;
+      }
       return PomodoroSessionSnapshot(
         kind: m['kind'] as String,
-        remainingSeconds: (m['remaining'] as num).toInt(),
         totalSeconds: (m['total'] as num).toInt(),
-        startedAtMs: (m['startedAt'] as num).toInt(),
-        taskId: m['taskId'] as String,
-        taskTitle: m['taskTitle'] as String,
-        presetLabel: m['preset'] as String,
-        cycleIndex: (m['cycle'] as num).toInt(),
-        cyclesBeforeLong: (m['cyclesBeforeLong'] as num).toInt(),
+        startedAtMs: startedAtMs,
+        running: running,
+        endAtMs: endAtMs,
+        pausedRemainingSec: pausedRemainingSec,
+        taskId: (m['taskId'] as String?) ?? '',
+        taskTitle: (m['taskTitle'] as String?) ?? '',
+        presetLabel: (m['preset'] as String?) ?? 'Estándar',
+        cycleIndex: ((m['cycle'] as num?) ?? 0).toInt(),
+        cyclesBeforeLong: ((m['cyclesBeforeLong'] as num?) ?? 4).toInt(),
       );
     } catch (_) {
       return null;
     }
   }
 
-  /// Cuántos segundos pasaron desde que se guardó el snapshot.
-  /// Si el delta es mayor que el total, la sesión ya expiró.
-  int elapsedSeconds(DateTime now) {
-    final started = DateTime.fromMillisecondsSinceEpoch(startedAtMs);
-    return now.difference(started).inSeconds;
-  }
-
-  /// Lo que le quedaba REAL al usuario si reabre la app ahora. Si es
-  /// <= 0 la sesión ya terminó y se debe descartar.
+  /// Lo que le queda REALMENTE al usuario ahora mismo. Con sesiones
+  /// corriendo se deriva del reloj (`endAtMs - ahora`), así que seguir
+  /// contando en background sale gratis. Si es <= 0 la sesión ya llegó
+  /// a su fin.
   int remainingNow(DateTime now) {
-    return remainingSeconds - elapsedSeconds(now);
+    if (!running) return pausedRemainingSec;
+    return ((endAtMs - now.millisecondsSinceEpoch) / 1000).floor();
   }
 }
 

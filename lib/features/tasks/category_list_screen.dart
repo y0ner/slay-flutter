@@ -18,37 +18,19 @@ class CategoryListScreen extends ConsumerStatefulWidget {
 class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
   bool _editMode = false;
   bool _saving = false;
+
+  /// Lista local que refleja el orden actual durante la edición.
+  /// Se mantiene como fuente de verdad incluso después de salir del
+  /// modo edición, hasta que el stream de Supabase confirma el nuevo
+  /// orden — así el grid nunca muestra datos viejos.
   List<Category>? _localList;
 
-  Future<void> _toggleEdit() async {
+  void _toggleEdit() {
     if (_editMode) {
-      // FORZAR guardado: tomamos _localList tal como quedó tras los
-      // drags y la persistimos a Supabase. No salimos hasta que
-      // Supabase confirme. Así el orden del modo edición es el que
-      // queda guardado "a toda costa".
-      if (_localList != null && _localList!.isNotEmpty) {
-        setState(() => _saving = true);
-        try {
-          // Renumeramos sort_order 0..N-1 por las dudas.
-          final renumbered = [
-            for (var i = 0; i < _localList!.length; i++)
-              _localList![i].copyWith(sortOrder: i),
-          ];
-          await ref.read(categoryRepositoryProvider).reorder(renumbered);
-          ref.invalidate(categoriesStreamProvider);
-        } catch (_) {
-          // Si falla la red, el stream conservará el último orden
-          // conocido. El user puede reintentar.
-        }
-        if (mounted) setState(() => _saving = false);
-      }
-      if (mounted) {
-        setState(() {
-          _editMode = false;
-          _localList = null;
-        });
-      }
+      // Guardar el orden actual y salir.
+      _saveAndExit();
     } else {
+      // Entrar: capturar la lista actual como estado local.
       final asyncCats = ref.read(categoriesStreamProvider);
       final currentList = asyncCats.valueOrNull ?? [];
       setState(() {
@@ -58,18 +40,51 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
     }
   }
 
-  /// FIX: `reorderable_grid_view` usa la misma semántica de índices
-  /// que `ReorderableListView` de Flutter: cuando arrastrás un item
-  /// hacia ABAJO (oldIndex < newIndex), el newIndex incluye el hueco
-  /// del item que se removió, así que hay que restar 1.
+  /// Persiste el orden de `_localList` a Supabase. No limpia
+  /// `_localList` hasta que el stream confirme el nuevo orden.
+  Future<void> _saveAndExit() async {
+    final list = _localList;
+    if (list == null || list.isEmpty) {
+      setState(() => _editMode = false);
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final renumbered = [
+        for (var i = 0; i < list.length; i++)
+          list[i].copyWith(sortOrder: i),
+      ];
+      await ref.read(categoryRepositoryProvider).reorder(renumbered);
+      // Invalidar para que el stream re-fetchee. NO limpiamos
+      // _localList todavía — lo hacemos cuando el stream confirme.
+      ref.invalidate(categoriesStreamProvider);
+    } catch (_) {
+      // Error de red: salimos igual, el stream conservará el último
+      // orden conocido. _localList se limpia abajo.
+    }
+    if (mounted) {
+      setState(() {
+        _saving = false;
+        _editMode = false;
+      });
+    }
+  }
+
+  /// `reorderable_grid_view` llama a `onReorder(_dragIndex, _dropIndex)`
+  /// donde `_dropIndex` es el índice del item OBJETIVO (no un slot
+  /// entre items como en `ReorderableListView`). Para insertar el
+  /// item arrastrado DESPUÉS del objetivo:
+  ///   - newIndex > oldIndex → insertar en newIndex (el objetivo ya
+  ///     se corrió una posición arriba por el removeAt)
+  ///   - newIndex < oldIndex → insertar en newIndex + 1 (el objetivo
+  ///     no se movió, hay que ir después de él)
   void _onReorder(int oldIndex, int newIndex) {
     final list = _localList;
-    if (list == null) return;
-    if (oldIndex < newIndex) newIndex -= 1;
-    if (oldIndex == newIndex) return;
+    if (list == null || oldIndex == newIndex) return;
     final updated = [...list];
     final moved = updated.removeAt(oldIndex);
-    updated.insert(newIndex, moved);
+    final insertAt = newIndex > oldIndex ? newIndex : newIndex + 1;
+    updated.insert(insertAt, moved);
     setState(() => _localList = updated);
   }
 
@@ -116,9 +131,25 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (list) {
-          final displayList = _editMode ? (_localList ?? list) : list;
+          // Fuente de verdad: _localList mientras exista (durante
+          // edición Y hasta que el stream confirme el nuevo orden
+          // después de guardar). Si no hay _localList, usar stream.
+          final displayList = _localList ?? list;
+          // Cuando el stream trae datos nuevos que coinciden con lo
+          // que persistimos, limpiamos _localList para no usarlo más.
+          if (_localList != null &&
+              !_editMode &&
+              !_saving &&
+              list.isNotEmpty &&
+              list.first.id == _localList!.first.id &&
+              list.length == _localList!.length) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _localList = null);
+            });
+          }
           return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(categoriesStreamProvider),
+            onRefresh: () async =>
+                ref.invalidate(categoriesStreamProvider),
             child: displayList.isEmpty
                 ? const _EmptyState()
                 : _editMode

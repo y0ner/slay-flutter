@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/theme/terminal_theme.dart';
 import '../../data/repositories/category_repository.dart';
 import '../tasks/category_editor_dialog.dart';
 
@@ -49,9 +50,11 @@ class ManageCategoriesScreen extends ConsumerWidget {
               final canDown = i < list.length - 1;
               return ListTile(
                 key: ValueKey(c.id),
-                leading: CircleAvatar(
-                  backgroundColor: Color(int.parse(c.color.replaceFirst('#', '0xFF'))),
-                  radius: 12,
+                // Marcador cuadrado de la casa en lugar del círculo.
+                leading: Container(
+                  width: 14,
+                  height: 14,
+                  color: Color(int.parse(c.color.replaceFirst('#', '0xFF'))),
                 ),
                 title: Text(c.name),
                 trailing: Row(

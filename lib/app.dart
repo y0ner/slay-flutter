@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/router/app_router.dart';
 import 'core/state/logging_out_provider.dart';
-import 'core/theme/slay_theme.dart';
+import 'core/theme/terminal_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'data/sync/sync_service.dart';
 import 'widgets/logout_overlay.dart';
@@ -57,8 +57,8 @@ class _SlayAppState extends ConsumerState<SlayApp> {
     return MaterialApp.router(
       title: 'Slay',
       debugShowCheckedModeBanner: false,
-      theme: SlayTheme.light,
-      darkTheme: SlayTheme.dark,
+      theme: TerminalTheme.light,
+      darkTheme: TerminalTheme.dark,
       themeMode: toMaterialThemeMode(themeMode),
       routerConfig: router,
       // El `builder` envuelve TODO el árbol del router. Cualquier widget

@@ -2,16 +2,15 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-/// Splash screen animado y moderno con el logo oficial de la app.
-/// Se adapta perfectamente a modo Oscuro (Dark) y modo Claro (White)
-/// e incluye un Loading Spinner estilizado con la paleta de Slay.
+import '../core/theme/terminal_theme.dart';
+
+/// Splash estilo terminal: fondo plano cálido, prompt `>_` en naranja,
+/// palabra en pixel font y spinner de bloques. Sin gradientes ni glows.
 ///
 /// **Perf**: las partes estáticas (logo, título, subtítulo) NO viven
 /// dentro de ningún `AnimatedBuilder`, así que no se reconstruyen por
-/// frame. El aura pulsa vía `Transform.scale` (pintura sin relayout)
-/// dentro de su propio `RepaintBoundary`; el spinner rota en una capa
-/// igualmente aislada. Al salir se detienen los controladores para no
-/// quemar ciclos durante el fade-out.
+/// frame. El spinner rota en una capa aislada (RepaintBoundary). Al salir
+/// se detienen los controladores para no quemar ciclos durante el fade.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key, this.onComplete});
   final VoidCallback? onComplete;
@@ -26,11 +25,6 @@ class _SplashScreenState extends State<SplashScreen>
     vsync: this,
     duration: const Duration(milliseconds: 380),
   );
-
-  late final AnimationController _pulseController = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 2200),
-  )..repeat(reverse: true);
 
   late final AnimationController _spinController = AnimationController(
     vsync: this,
@@ -65,7 +59,6 @@ class _SplashScreenState extends State<SplashScreen>
   void _dismiss() async {
     if (_isExiting) return;
     _isExiting = true;
-    _pulseController.stop();
     _spinController.stop();
     await _entryExitController.reverse();
     if (mounted) {
@@ -76,181 +69,127 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void dispose() {
     _entryExitController.dispose();
-    _pulseController.dispose();
     _spinController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    final primaryColor =
-        isDark ? const Color(0xFF34D399) : const Color(0xFF10B981);
-    final accentColor =
-        isDark ? const Color(0xFF22D3EE) : const Color(0xFF14B8A6);
-    final bgColor = isDark ? const Color(0xFF0D0E12) : const Color(0xFFF8FAFC);
-    final textColor = isDark ? const Color(0xFFF3F4F6) : const Color(0xFF111827);
-    final subtleColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? TerminalTheme.nightBg : TerminalTheme.dayBg;
+    final fg = isDark ? TerminalTheme.nightFg : TerminalTheme.dayFg;
+    final accent = isDark ? TerminalTheme.nightAccent : TerminalTheme.dayAccent;
+    final muted = isDark ? TerminalTheme.nightMuted : TerminalTheme.dayMuted;
+    final line = isDark ? TerminalTheme.nightLine : TerminalTheme.dayLine;
 
     return FadeTransition(
       opacity: _fadeAnimation,
       child: ScaleTransition(
         scale: _scaleAnimation,
         child: Material(
-          color: bgColor,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: const Alignment(0, -0.2),
-                radius: 1.3,
-                colors: isDark
-                    ? [
-                        primaryColor.withValues(alpha: 0.15),
-                        const Color(0xFF0E0F14),
-                        const Color(0xFF07080A),
-                      ]
-                    : [
-                        primaryColor.withValues(alpha: 0.12),
-                        const Color(0xFFF9FAFB),
-                        const Color(0xFFEEF2F6),
-                      ],
-              ),
-            ),
-            child: SafeArea(
-              child: Stack(
-                children: [
-                  Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 190,
-                          height: 190,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              RepaintBoundary(
-                                child: AnimatedBuilder(
-                                  animation: _pulseController,
-                                  builder: (_, __) {
-                                    final t = Curves.easeInOut
-                                        .transform(_pulseController.value);
-                                    return Transform.scale(
-                                      scale: 1.0 + 0.13 * t,
-                                      child: Container(
-                                        width: 150,
-                                        height: 150,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          gradient: RadialGradient(
-                                            colors: [
-                                              primaryColor.withValues(
-                                                alpha: isDark ? 0.35 : 0.22,
-                                              ),
-                                              primaryColor.withValues(alpha: 0.0),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              _LogoBadge(isDark: isDark, primaryColor: primaryColor),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        Text(
-                          'Slay',
-                          style: theme.textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.5,
-                            fontSize: 34,
-                            color: textColor,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 5,
-                              height: 5,
-                              decoration: BoxDecoration(
-                                color: primaryColor,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Domina tu día',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: subtleColor,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.4,
-                                fontSize: 13,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              width: 5,
-                              height: 5,
-                              decoration: BoxDecoration(
-                                color: primaryColor,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 56,
-                    child: Center(
-                      child: Column(
+          color: bg,
+          child: SafeArea(
+            child: Stack(
+              children: [
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Prompt de la casa: >_ en naranja.
+                      Row(
                         mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          RepaintBoundary(
-                            child: AnimatedBuilder(
-                              animation: _spinController,
-                              builder: (_, __) => CustomPaint(
-                                size: const Size(44, 44),
-                                painter: _CometSpinnerPainter(
-                                  rotation:
-                                      _spinController.value * 2 * math.pi,
-                                  colors: [
-                                    primaryColor.withValues(alpha: 0.0),
-                                    accentColor,
-                                    primaryColor,
-                                  ],
-                                  trackColor:
-                                      primaryColor.withValues(alpha: 0.10),
-                                ),
-                              ),
+                          Text(
+                            '>',
+                            style: TextStyle(
+                              fontFamily: TerminalTheme.pixelFamily,
+                              fontSize: 56,
+                              height: 1,
+                              color: accent,
                             ),
                           ),
-                          const SizedBox(height: 14),
-                          Text(
-                            'Cargando...',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.5,
-                              color: subtleColor.withValues(alpha: 0.7),
+                          const SizedBox(width: 6),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 9),
+                            child: Container(
+                              width: 36,
+                              height: 10,
+                              color: accent,
                             ),
                           ),
                         ],
                       ),
+                      const SizedBox(height: 26),
+                      Text(
+                        'Slay',
+                        style: TextStyle(
+                          fontFamily: TerminalTheme.pixelFamily,
+                          fontSize: 38,
+                          height: 1.15,
+                          color: fg,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(width: 6, height: 6, color: accent),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Domina tu día',
+                            style: TextStyle(
+                              fontFamily: TerminalTheme.monoFamily,
+                              color: muted,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.8,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(width: 6, height: 6, color: accent),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 56,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        RepaintBoundary(
+                          child: AnimatedBuilder(
+                            animation: _spinController,
+                            builder: (_, __) => CustomPaint(
+                              size: const Size(36, 36),
+                              painter: _BlockSpinnerPainter(
+                                rotation: _spinController.value * 2 * 3.14159,
+                                color: accent,
+                                trackColor: line,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          'Cargando...',
+                          style: TextStyle(
+                            fontFamily: TerminalTheme.monoFamily,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                            color: muted.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -259,137 +198,50 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-class _LogoBadge extends StatelessWidget {
-  const _LogoBadge({required this.isDark, required this.primaryColor});
-  final bool isDark;
-  final Color primaryColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 100,
-      height: 100,
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF18191E) : Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.12)
-              : Colors.black.withValues(alpha: 0.06),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: primaryColor.withValues(alpha: isDark ? 0.35 : 0.25),
-            blurRadius: 30,
-            spreadRadius: 2,
-            offset: const Offset(0, 10),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.40 : 0.08),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Center(
-        child: CustomPaint(
-          size: const Size(54, 54),
-          painter: _SlayCheckPainter(
-            gradient: LinearGradient(
-              colors: isDark
-                  ? [const Color(0xFF34D399), const Color(0xFF10B981)]
-                  : [const Color(0xFF10B981), const Color(0xFF059669)],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CometSpinnerPainter extends CustomPainter {
-  const _CometSpinnerPainter({
+/// Spinner de la casa: bloques cuadrados orbitando, sin arcos redondeados.
+class _BlockSpinnerPainter extends CustomPainter {
+  _BlockSpinnerPainter({
     required this.rotation,
-    required this.colors,
+    required this.color,
     required this.trackColor,
   });
+
   final double rotation;
-  final List<Color> colors;
+  final Color color;
   final Color trackColor;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = size.center(Offset.zero);
-    final strokeWidth = size.shortestSide * 0.09;
-    final radius = (size.shortestSide - strokeWidth) / 2;
-    final rect = Rect.fromCircle(center: center, radius: radius);
-    final sweep = math.pi * 1.45;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 4;
 
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth
-        ..color = trackColor,
-    );
+    // Pista: 8 bloques apagados en círculo.
+    const total = 8;
+    final trackPaint = Paint()..color = trackColor;
+    for (var i = 0; i < total; i++) {
+      final angle = (i / total) * 2 * math.pi;
+      final pos =
+          center + Offset(radius * math.cos(angle), radius * math.sin(angle));
+      canvas.drawRect(
+        Rect.fromCenter(center: pos, width: 4, height: 4),
+        trackPaint,
+      );
+    }
 
-    final haloPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth * 2.4
-      ..strokeCap = StrokeCap.round
-      ..shader = SweepGradient(
-        colors: colors,
-        transform: GradientRotation(rotation),
-      ).createShader(rect);
-    canvas.drawArc(rect, rotation, sweep, false, haloPaint);
-
-    final arcPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..shader = SweepGradient(
-        colors: colors,
-        transform: GradientRotation(rotation),
-      ).createShader(rect);
-    canvas.drawArc(rect, rotation, sweep, false, arcPaint);
-
-    final headAngle = rotation + sweep;
-    final headCenter = center +
-        Offset(math.cos(headAngle), math.sin(headAngle)) * radius;
-    canvas.drawCircle(headCenter, strokeWidth * 0.85,
-        Paint()..color = colors.last);
+    // Bloques activos: los 3 primeros tras la rotación van llenos.
+    final activePaint = Paint()..color = color;
+    for (var i = 0; i < 3; i++) {
+      final angle = rotation + (i / total) * 2 * math.pi;
+      final pos =
+          center + Offset(radius * math.cos(angle), radius * math.sin(angle));
+      canvas.drawRect(
+        Rect.fromCenter(center: pos, width: 5, height: 5),
+        activePaint,
+      );
+    }
   }
 
   @override
-  bool shouldRepaint(covariant _CometSpinnerPainter oldDelegate) =>
-      oldDelegate.rotation != rotation ||
-      oldDelegate.colors != colors ||
-      oldDelegate.trackColor != trackColor;
-}
-
-class _SlayCheckPainter extends CustomPainter {
-  const _SlayCheckPainter({required this.gradient});
-  final Gradient gradient;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final paint = Paint()
-      ..shader = gradient.createShader(rect)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6.0
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final path = Path();
-    path.moveTo(size.width * 0.22, size.height * 0.52);
-    path.lineTo(size.width * 0.44, size.height * 0.74);
-    path.lineTo(size.width * 0.80, size.height * 0.28);
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(_BlockSpinnerPainter oldDelegate) =>
+      oldDelegate.rotation != rotation;
 }

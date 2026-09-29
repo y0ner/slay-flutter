@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/theme/terminal_theme.dart';
 import '../../data/models/category.dart';
 import '../../data/repositories/category_repository.dart';
 
@@ -30,11 +31,13 @@ class CategoryEditorDialog extends ConsumerStatefulWidget {
 class _CategoryEditorDialogState extends ConsumerState<CategoryEditorDialog> {
   late final _ctrl =
       TextEditingController(text: widget.existing?.name ?? '');
-  late String _color = widget.existing?.color ?? '#4CAF50';
+  late String _color = widget.existing?.color ?? '#C2410C';
 
+  // Paleta cálida de la casa + colores planos que armonizan con
+  // la rampa papel/tinta del tema terminal.
   static const _colors = [
-    '#4CAF50', '#2196F3', '#9C27B0', '#F44336',
-    '#FF9800', '#795548', '#607D8B', '#E91E63',
+    '#C2410C', '#2F7A3B', '#8A5A00', '#B91C3C',
+    '#795548', '#607D8B', '#9C27B0', '#2196F3',
   ];
 
   @override
@@ -62,8 +65,11 @@ class _CategoryEditorDialogState extends ConsumerState<CategoryEditorDialog> {
             autofocus: true,
           ),
           const SizedBox(height: 16),
+          // Swatches cuadrados: los colores son planos y el seleccionado
+          // se marca con borde naranja de la casa.
           Wrap(
             spacing: 8,
+            runSpacing: 8,
             children: [
               for (final c in _colors)
                 GestureDetector(
@@ -73,12 +79,17 @@ class _CategoryEditorDialogState extends ConsumerState<CategoryEditorDialog> {
                     height: 32,
                     decoration: BoxDecoration(
                       color: _parse(c),
-                      shape: BoxShape.circle,
                       border: Border.all(
-                        color: _color == c ? Colors.white : Colors.transparent,
-                        width: 2,
+                        color: _color == c
+                            ? TerminalTheme.accentOf(context)
+                            : TerminalTheme.lineOf(context),
+                        width: _color == c ? 2.4 : 1,
                       ),
                     ),
+                    child: _color == c
+                        ? const Icon(Icons.check,
+                            size: 16, color: Colors.white)
+                        : null,
                   ),
                 ),
             ],

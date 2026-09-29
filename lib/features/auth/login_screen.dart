@@ -4,9 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/supabase/supabase_config.dart';
+import '../../core/theme/terminal_theme.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../widgets/shimmer_loader.dart';
 
+/// Login estilo "terminal cálida" (referencia: prompt >_ naranja,
+/// panel oscuro con borde 1px, etiquetas con marcador naranja,
+/// botón primario naranja cuadrado, input con ícono y sin redondeos).
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -105,14 +109,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final configured = SupabaseConfig.isConfigured;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    const emeraldAccent = Color(0xFF10B981);
-    const emeraldLight = Color(0xFF34D399);
-    final accent = isDark ? emeraldLight : emeraldAccent;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF09090B) : const Color(0xFFF4F4F5),
+      backgroundColor: TerminalTheme.nightBg,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -120,15 +119,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             // el teclado (resizeToAvoidBottomInset por defecto). Depender
             // de `viewInsets` acá provocaba un rebuild completo en CADA
             // frame de la animación del teclado.
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24,
-              vertical: 24,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
               child: _LoginCard(
-                isDark: isDark,
-                accent: accent,
                 configured: configured,
                 isRegister: _isRegister,
                 obscure: _obscure,
@@ -163,8 +157,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
 class _LoginCard extends StatelessWidget {
   const _LoginCard({
-    required this.isDark,
-    required this.accent,
     required this.configured,
     required this.isRegister,
     required this.obscure,
@@ -181,8 +173,6 @@ class _LoginCard extends StatelessWidget {
     required this.onContinueLocal,
   });
 
-  final bool isDark;
-  final Color accent;
   final bool configured;
   final bool isRegister;
   final bool obscure;
@@ -201,23 +191,10 @@ class _LoginCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
       decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF121214)
-            : Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: isDark ? const Color(0xFF27272A) : const Color(0xFFE4E4E7),
-          width: 1.2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.08),
-            blurRadius: 32,
-            offset: const Offset(0, 14),
-          ),
-        ],
+        color: TerminalTheme.nightPanel,
+        border: Border.all(color: TerminalTheme.nightLine, width: 1),
       ),
       child: Form(
         key: formKey,
@@ -225,36 +202,47 @@ class _LoginCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            _Header(isRegister: isRegister, accent: accent, isDark: isDark),
-            const SizedBox(height: 24),
+            // ── Prompt >_ como logo ──────────────────────────
+            const _PromptGlyph(),
+            const SizedBox(height: 20),
 
-            _ModeSelector(
-              isRegister: isRegister,
-              accent: accent,
-              isDark: isDark,
-              onSelect: (v) {
-                if (isRegister != v) onToggleRegister();
-              },
+            Text(
+              isRegister ? 'Crear cuenta' : 'Iniciar sesión',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: TerminalTheme.pixelFamily,
+                fontSize: 28,
+                color: TerminalTheme.nightFg,
+                height: 1.15,
+              ),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 10),
+            Text(
+              isRegister
+                  ? 'Creá tu cuenta para empezar.'
+                  : 'Accedé a tu cuenta para continuar.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: TerminalTheme.monoFamily,
+                fontSize: 13.5,
+                color: TerminalTheme.nightMuted,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 32),
 
             if (!configured) ...[
-              _OfflineNotice(
-                accent: accent,
-                isDark: isDark,
-                onContinue: onContinueLocal,
-              ),
+              _OfflineNotice(onContinue: onContinueLocal),
               const SizedBox(height: 20),
             ],
 
-            _InputField(
-              label: 'Correo electrónico',
-              hint: 'tu@email.com',
-              icon: Icons.mail_outline_rounded,
+            _FieldLabel('CORREO ELECTRÓNICO'),
+            const SizedBox(height: 8),
+            _TerminalField(
               controller: emailCtrl,
               focusNode: emailFocus,
-              accent: accent,
-              isDark: isDark,
+              hint: 'tu@email.com',
+              icon: Icons.mail_outline_rounded,
               textInputAction: TextInputAction.next,
               keyboardType: TextInputType.emailAddress,
               autofillHints: const [AutofillHints.email],
@@ -271,14 +259,13 @@ class _LoginCard extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            _InputField(
-              label: 'Contraseña',
-              hint: '••••••••',
-              icon: Icons.lock_outline_rounded,
+            _FieldLabel('CONTRASEÑA'),
+            const SizedBox(height: 8),
+            _TerminalField(
               controller: passCtrl,
               focusNode: passFocus,
-              accent: accent,
-              isDark: isDark,
+              hint: '••••••••',
+              icon: Icons.lock_outline_rounded,
               obscureText: obscure,
               textInputAction: TextInputAction.done,
               keyboardType: TextInputType.visiblePassword,
@@ -291,7 +278,7 @@ class _LoginCard extends StatelessWidget {
                       ? Icons.visibility_outlined
                       : Icons.visibility_off_outlined,
                   size: 19,
-                  color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF71717A),
+                  color: TerminalTheme.nightMuted,
                 ),
                 onPressed: onToggleObscure,
               ),
@@ -305,23 +292,25 @@ class _LoginCard extends StatelessWidget {
             if (error != null) ...[
               const SizedBox(height: 18),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
+                  color: TerminalTheme.nightHeart.withValues(alpha: 0.10),
                   border: Border.all(
-                    color: const Color(0xFFEF4444).withValues(alpha: 0.35),
+                    color: TerminalTheme.nightHeart.withValues(alpha: 0.5),
                   ),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.error_outline_rounded, color: Color(0xFFEF4444), size: 18),
+                    const Icon(Icons.error_outline_rounded,
+                        color: TerminalTheme.nightHeart, size: 18),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         error!,
                         style: const TextStyle(
-                          color: Color(0xFFEF4444),
+                          fontFamily: TerminalTheme.monoFamily,
+                          color: TerminalTheme.nightHeart,
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
@@ -334,30 +323,50 @@ class _LoginCard extends StatelessWidget {
 
             const SizedBox(height: 28),
 
-            _SubmitButton(
+            // ── Botón primario naranja cuadrado ──────────────
+            _PrimaryButton(
               text: isRegister ? 'Crear cuenta' : 'Iniciar sesión',
               loading: loading,
-              accent: accent,
-              isDark: isDark,
               onPressed: loading ? null : onSubmit,
             ),
+            const SizedBox(height: 28),
 
+            // ── Separador "o continua con" ───────────────────
+            const _DividerWithLabel('o continua con'),
             const SizedBox(height: 20),
 
-            Center(
-              child: GestureDetector(
-                onTap: loading ? null : onToggleRegister,
-                child: Text(
+            // ── Botón GitHub outline ─────────────────────────
+            _GithubButton(),
+            const SizedBox(height: 24),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
                   isRegister
-                      ? '¿Ya tenés una cuenta? Iniciar sesión'
-                      : '¿No tenés una cuenta? Creá una aquí',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF71717A),
+                      ? '¿Ya tenés una cuenta? '
+                      : '¿No tenés una cuenta? ',
+                  style: const TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
+                    fontSize: 12.5,
+                    color: TerminalTheme.nightMuted,
                   ),
                 ),
-              ),
+                GestureDetector(
+                  onTap: loading ? null : onToggleRegister,
+                  child: Text(
+                    isRegister ? 'Iniciar sesión' : 'Registrate',
+                    style: const TextStyle(
+                      fontFamily: TerminalTheme.monoFamily,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: TerminalTheme.nightAccent,
+                      decoration: TextDecoration.underline,
+                      decorationColor: TerminalTheme.nightAccent,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -366,66 +375,77 @@ class _LoginCard extends StatelessWidget {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({
-    required this.isRegister,
-    required this.accent,
-    required this.isDark,
-  });
-
-  final bool isRegister;
-  final Color accent;
-  final bool isDark;
+/// El prompt `>_` en naranja — firma visual del login.
+class _PromptGlyph extends StatelessWidget {
+  const _PromptGlyph();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return const Center(
+      child: SizedBox(
+        height: 44,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '>',
+              style: TextStyle(
+                fontFamily: TerminalTheme.pixelFamily,
+                fontSize: 40,
+                height: 1,
+                color: TerminalTheme.nightAccent,
+              ),
+            ),
+            SizedBox(width: 4),
+            Padding(
+              padding: EdgeInsets.only(bottom: 6),
+              child: _UnderscoreBlock(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UnderscoreBlock extends StatelessWidget {
+  const _UnderscoreBlock();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 26,
+      height: 7,
+      color: TerminalTheme.nightAccent,
+    );
+  }
+}
+
+/// Etiqueta de campo: cuadradito naranja + texto en mayúsculas.
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
       children: [
         Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                accent.withValues(alpha: isDark ? 0.25 : 0.18),
-                accent.withValues(alpha: 0.05),
-              ],
-            ),
-            border: Border.all(
-              color: accent.withValues(alpha: isDark ? 0.45 : 0.35),
-              width: 1.2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: accent.withValues(alpha: isDark ? 0.25 : 0.12),
-                blurRadius: 18,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: Icon(Icons.bolt_rounded, color: accent, size: 28),
+          width: 8,
+          height: 8,
+          color: TerminalTheme.nightAccent,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(width: 8),
         Text(
-          isRegister ? 'Creá tu cuenta' : 'Bienvenido a Slay',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.6,
-            color: isDark ? const Color(0xFFFAFAFA) : const Color(0xFF09090B),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Gestioná tus tareas, categorías y pomodoros con foco.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 13.5,
-            color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF71717A),
+          text,
+          style: const TextStyle(
+            fontFamily: TerminalTheme.monoFamily,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+            color: TerminalTheme.nightAccent,
           ),
         ),
       ],
@@ -433,115 +453,14 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _ModeSelector extends StatelessWidget {
-  const _ModeSelector({
-    required this.isRegister,
-    required this.accent,
-    required this.isDark,
-    required this.onSelect,
-  });
-
-  final bool isRegister;
-  final Color accent;
-  final bool isDark;
-  final ValueChanged<bool> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 44,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF18181B) : const Color(0xFFE4E4E7),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark ? const Color(0xFF27272A) : const Color(0xFFD4D4D8),
-        ),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final tabWidth = (constraints.maxWidth - 4) / 2;
-          return Stack(
-            children: [
-              Align(
-                alignment: isRegister ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  width: tabWidth,
-                  height: double.infinity,
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF27272A) : Colors.white,
-                    borderRadius: BorderRadius.circular(9),
-                    border: Border.all(
-                      color: accent.withValues(alpha: 0.3),
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(9),
-                      onTap: () => onSelect(false),
-                      child: Center(
-                        child: Text(
-                          'Iniciar sesión',
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: !isRegister ? FontWeight.w700 : FontWeight.w500,
-                            color: !isRegister
-                                ? (isDark ? Colors.white : Colors.black)
-                                : (isDark ? const Color(0xFFA1A1AA) : const Color(0xFF71717A)),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(9),
-                      onTap: () => onSelect(true),
-                      child: Center(
-                        child: Text(
-                          'Registrarse',
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: isRegister ? FontWeight.w700 : FontWeight.w500,
-                            color: isRegister
-                                ? (isDark ? Colors.white : Colors.black)
-                                : (isDark ? const Color(0xFFA1A1AA) : const Color(0xFF71717A)),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _InputField extends StatelessWidget {
-  const _InputField({
-    required this.label,
-    required this.hint,
-    required this.icon,
+/// Input de la casa: fondo nightBg, borde 1px nightLine, cuadrado,
+/// ícono a la izquierda. Sin redondeos, sin glows.
+class _TerminalField extends StatelessWidget {
+  const _TerminalField({
     required this.controller,
     required this.focusNode,
-    required this.accent,
-    required this.isDark,
+    required this.hint,
+    required this.icon,
     this.obscureText = false,
     this.textInputAction = TextInputAction.next,
     this.keyboardType = TextInputType.text,
@@ -551,13 +470,10 @@ class _InputField extends StatelessWidget {
     this.suffixIcon,
   });
 
-  final String label;
-  final String hint;
-  final IconData icon;
   final TextEditingController controller;
   final FocusNode focusNode;
-  final Color accent;
-  final bool isDark;
+  final String hint;
+  final IconData icon;
   final bool obscureText;
   final TextInputAction textInputAction;
   final TextInputType keyboardType;
@@ -568,81 +484,79 @@ class _InputField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
-            color: isDark ? const Color(0xFFD4D4D8) : const Color(0xFF3F3F46),
+    return TextFormField(
+      controller: controller,
+      focusNode: focusNode,
+      obscureText: obscureText,
+      textInputAction: textInputAction,
+      keyboardType: keyboardType,
+      autofillHints: autofillHints,
+      onFieldSubmitted: onSubmitted,
+      validator: validator,
+      style: const TextStyle(
+        fontFamily: TerminalTheme.monoFamily,
+        fontSize: 14.5,
+        color: TerminalTheme.nightFg,
+      ),
+      cursorColor: TerminalTheme.nightAccent,
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(
+          fontFamily: TerminalTheme.monoFamily,
+          fontSize: 14,
+          color: TerminalTheme.nightMuted,
+        ),
+        prefixIcon: Icon(
+          icon,
+          size: 20,
+          color: TerminalTheme.nightMuted,
+        ),
+        suffixIcon: suffixIcon,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+        filled: true,
+        fillColor: TerminalTheme.nightBg,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.zero,
+          borderSide: BorderSide(color: TerminalTheme.nightLine),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.zero,
+          borderSide: BorderSide(color: TerminalTheme.nightLine),
+        ),
+        focusedBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.zero,
+          borderSide: BorderSide(
+            color: TerminalTheme.nightAccent,
+            width: 1.2,
           ),
         ),
-        const SizedBox(height: 7),
-        Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF18181B) : const Color(0xFFFAFAFA),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isDark ? const Color(0xFF27272A) : const Color(0xFFE4E4E7),
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: TextFormField(
-              controller: controller,
-              focusNode: focusNode,
-              obscureText: obscureText,
-              textInputAction: textInputAction,
-              keyboardType: keyboardType,
-              autofillHints: autofillHints,
-              onFieldSubmitted: onSubmitted,
-              validator: validator,
-              style: TextStyle(
-                fontSize: 14,
-                color: isDark ? Colors.white : const Color(0xFF18181B),
-              ),
-              decoration: InputDecoration(
-                hintText: hint,
-                hintStyle: TextStyle(
-                  fontSize: 13.5,
-                  color: isDark ? const Color(0xFF71717A) : const Color(0xFFA1A1AA),
-                ),
-                prefixIcon: Icon(
-                  icon,
-                  size: 20,
-                  color: isDark ? const Color(0xFF71717A) : const Color(0xFFA1A1AA),
-                ),
-                suffixIcon: suffixIcon,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                errorBorder: InputBorder.none,
-                focusedErrorBorder: InputBorder.none,
-              ),
-            ),
+        errorBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.zero,
+          borderSide: BorderSide(color: TerminalTheme.nightHeart),
+        ),
+        focusedErrorBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.zero,
+          borderSide: BorderSide(
+            color: TerminalTheme.nightHeart,
+            width: 1.2,
           ),
         ),
-      ],
+      ),
     );
   }
 }
 
-class _SubmitButton extends StatelessWidget {
-  const _SubmitButton({
+/// Botón primario: naranja sólido, cuadrado, texto en mono bold.
+class _PrimaryButton extends StatelessWidget {
+  const _PrimaryButton({
     required this.text,
     required this.loading,
-    required this.accent,
-    required this.isDark,
     required this.onPressed,
   });
 
   final String text;
   final bool loading;
-  final Color accent;
-  final bool isDark;
   final VoidCallback? onPressed;
 
   @override
@@ -650,85 +564,101 @@ class _SubmitButton extends StatelessWidget {
     return GestureDetector(
       onTap: onPressed,
       child: Container(
-        height: 48,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: isDark
-                ? [const Color(0xFF1E1E24), const Color(0xFF121215)]
-                : [const Color(0xFF27272A), const Color(0xFF09090B)],
-          ),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isDark ? const Color(0xFF3F3F46) : const Color(0xFF18181B),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.15),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              if (loading)
-                ShimmerLoader(size: 20, strokeWidth: 2.2, color: accent)
-              else
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+        height: 52,
+        decoration: const BoxDecoration(color: TerminalTheme.nightAccent),
+        child: Center(
+          child: loading
+              ? ShimmerLoader(size: 20, strokeWidth: 2.2, color: Colors.white)
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       text,
                       style: const TextStyle(
+                        fontFamily: TerminalTheme.monoFamily,
                         color: Colors.white,
-                        fontSize: 14.5,
+                        fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.white),
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 18,
+                      color: Colors.white,
+                    ),
                   ],
                 ),
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  height: 2,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.transparent,
-                        accent.withValues(alpha: 0.7),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
   }
 }
 
-class _OfflineNotice extends StatelessWidget {
-  const _OfflineNotice({
-    required this.accent,
-    required this.isDark,
-    required this.onContinue,
-  });
+class _GithubButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 48,
+      decoration: BoxDecoration(
+        border: Border.all(color: TerminalTheme.nightLine, width: 1),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.code_rounded,
+              size: 20, color: TerminalTheme.nightFg),
+          const SizedBox(width: 10),
+          Text(
+            'GitHub',
+            style: const TextStyle(
+              fontFamily: TerminalTheme.monoFamily,
+              fontSize: 14.5,
+              fontWeight: FontWeight.w600,
+              color: TerminalTheme.nightFg,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-  final Color accent;
-  final bool isDark;
+/// Separador con texto centrado: línea — texto — línea.
+class _DividerWithLabel extends StatelessWidget {
+  const _DividerWithLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Expanded(
+          child: Divider(color: TerminalTheme.nightLine, thickness: 1),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontFamily: TerminalTheme.monoFamily,
+              fontSize: 12,
+              color: TerminalTheme.nightMuted,
+            ),
+          ),
+        ),
+        const Expanded(
+          child: Divider(color: TerminalTheme.nightLine, thickness: 1),
+        ),
+      ],
+    );
+  }
+}
+
+class _OfflineNotice extends StatelessWidget {
+  const _OfflineNotice({required this.onContinue});
+
   final VoidCallback onContinue;
 
   @override
@@ -736,52 +666,61 @@ class _OfflineNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: accent.withValues(alpha: isDark ? 0.08 : 0.05),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: accent.withValues(alpha: 0.3)),
+        color: TerminalTheme.nightAccent.withValues(alpha: 0.08),
+        border: Border.all(
+          color: TerminalTheme.nightAccent.withValues(alpha: 0.4),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
+          const Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.info_outline_rounded, color: accent, size: 18),
-              const SizedBox(width: 8),
+              Icon(Icons.info_outline_rounded,
+                  color: TerminalTheme.nightAccent, size: 18),
+              SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Supabase no está configurado (--dart-define). Podés probar Slay con la base de datos local.',
                   style: TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
                     fontSize: 12,
-                    color: isDark ? const Color(0xFFD4D4D8) : const Color(0xFF3F3F46),
-                    height: 1.3,
+                    color: TerminalTheme.nightFg,
+                    height: 1.4,
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          OutlinedButton(
-            onPressed: onContinue,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: accent,
-              side: BorderSide(color: accent.withValues(alpha: 0.5)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          GestureDetector(
+            onTap: onContinue,
+            child: Container(
               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-            ),
-            child: const FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Continuar sin cuenta (demo local)',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                  ),
-                  SizedBox(width: 6),
-                  Icon(Icons.arrow_forward, size: 16),
-                ],
+              decoration: BoxDecoration(
+                border: Border.all(color: TerminalTheme.nightAccent),
+              ),
+              child: const FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Continuar sin cuenta (demo local)',
+                      style: TextStyle(
+                        fontFamily: TerminalTheme.monoFamily,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: TerminalTheme.nightAccent,
+                      ),
+                    ),
+                    SizedBox(width: 6),
+                    Icon(Icons.arrow_forward,
+                        size: 16, color: TerminalTheme.nightAccent),
+                  ],
+                ),
               ),
             ),
           ),

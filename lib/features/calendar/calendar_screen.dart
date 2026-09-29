@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 
+import '../../core/theme/terminal_theme.dart';
 import '../../data/models/category.dart';
 import '../../data/models/task.dart';
 import '../../data/repositories/category_repository.dart';
@@ -103,49 +104,54 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 }),
                 daysOfWeekStyle: DaysOfWeekStyle(
                   weekdayStyle: TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
                     color: scheme.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
-                    fontSize: 12,
+                    fontSize: 11.5,
                   ),
                   weekendStyle: TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
                     color: scheme.primary,
                     fontWeight: FontWeight.w600,
-                    fontSize: 12,
+                    fontSize: 11.5,
                   ),
                 ),
                 calendarStyle: CalendarStyle(
                   outsideDaysVisible: false,
                   cellMargin: const EdgeInsets.all(4),
                   defaultTextStyle: TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
                     color: scheme.onSurface,
-                    fontSize: 14,
+                    fontSize: 13.5,
                   ),
                   weekendTextStyle: TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
                     color: scheme.onSurface,
-                    fontSize: 14,
+                    fontSize: 13.5,
                   ),
                   outsideTextStyle: TextStyle(
                     color: scheme.onSurfaceVariant.withValues(alpha: 0.35),
-                    fontSize: 14,
+                    fontSize: 13.5,
                   ),
+                  // Hoy: borde naranja de la casa, cero redondeos.
                   todayDecoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: scheme.primary, width: 1.5),
+                    border: Border.all(color: scheme.primary, width: 1.4),
                   ),
                   todayTextStyle: TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
                     color: scheme.primary,
                     fontWeight: FontWeight.bold,
-                    fontSize: 14,
+                    fontSize: 13.5,
                   ),
+                  // Día seleccionado: naranja sólido, cuadrado.
                   selectedDecoration: BoxDecoration(
                     color: scheme.primary,
-                    shape: BoxShape.circle,
                   ),
                   selectedTextStyle: TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
                     color: scheme.onPrimary,
                     fontWeight: FontWeight.bold,
-                    fontSize: 14,
+                    fontSize: 13.5,
                   ),
                 ),
                 calendarBuilders: CalendarBuilders<Task>(
@@ -162,21 +168,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                           : fallback;
                       if (!colors.contains(col)) colors.add(col);
                       if (colors.length >= 3) break;
-                    }
-                    return Positioned(
+                    }                      return Positioned(
                       bottom: 2,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           for (var i = 0; i < colors.length; i++) ...[
                             if (i > 0) const SizedBox(width: 2),
+                            // Marcadores cuadrados de la casa.
                             Container(
                               width: 5,
                               height: 5,
-                              decoration: BoxDecoration(
-                                color: colors[i],
-                                shape: BoxShape.circle,
-                              ),
+                              color: colors[i],
                             ),
                           ],
                         ],
@@ -279,10 +282,10 @@ class _CalendarHeader extends StatelessWidget {
                 child: Text(
                   monthYear,
                   style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
+                    fontFamily: TerminalTheme.pixelFamily,
+                    fontSize: 20,
                     color: scheme.onSurface,
-                    letterSpacing: 0.3,
+                    letterSpacing: 0.5,
                   ),
                 ),
               ),
@@ -307,8 +310,12 @@ class _CalendarHeader extends StatelessWidget {
                 showSelectedIcon: false,
                 style: SegmentedButton.styleFrom(
                   visualDensity: VisualDensity.compact,
-                  textStyle: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600),
+                  shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.zero),
+                  textStyle: TextStyle(
+                      fontFamily: TerminalTheme.monoFamily,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600),
                 ),
                 segments: const [
                   ButtonSegment(
@@ -367,17 +374,15 @@ class _SelectedDayHeader extends StatelessWidget {
         children: [
           if (isToday) ...[
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Text(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              color: scheme.primary,
+              child: Text(
                 'HOY',
                 style: TextStyle(
+                  fontFamily: TerminalTheme.monoFamily,
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: scheme.onPrimary,
                   letterSpacing: 0.5,
                 ),
               ),
@@ -420,21 +425,22 @@ class _EmptyDay extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.event_busy,
-              size: 48, color: scheme.onSurfaceVariant.withValues(alpha: 0.4)),
-          const SizedBox(height: 12),
           Text(
-            'Nada pendiente este día',
+            '> nada pendiente este día',
             style: TextStyle(
-              fontSize: 15,
-              color: scheme.onSurface,
-              fontWeight: FontWeight.w500,
+              fontFamily: TerminalTheme.pixelFamily,
+              fontSize: 16,
+              color: scheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           Text(
             'Tocá una fecha para ver sus tareas',
-            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            style: TextStyle(
+              fontFamily: TerminalTheme.monoFamily,
+              fontSize: 13,
+              color: scheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),

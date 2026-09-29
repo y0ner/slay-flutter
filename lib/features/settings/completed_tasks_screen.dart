@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/theme/terminal_theme.dart';
 import '../../data/models/category.dart';
 import '../../data/models/task.dart';
 import '../../data/repositories/category_repository.dart';
@@ -51,10 +52,8 @@ class CompletedTasksScreen extends ConsumerWidget {
       });
 
     return Scaffold(
-      // Estamos fuera del shell, así que el fondo no viene del
-      // `slayBackgroundGradient`. Usamos el del theme para mantener
-      // coherencia con el resto de la app (y no terminar con un
-      // body blanco + cards oscuras).
+      // Estamos fuera del shell, así que forzamos el fondo del theme
+      // para mantener coherencia con el resto de la app.
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         leading: IconButton(
@@ -93,13 +92,16 @@ class _CompletedTaskTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final dateLabel = _formatDate(task.date);
     return Material(
-      color: Theme.of(context).colorScheme.surface,
-      borderRadius: BorderRadius.circular(12),
+      color: TerminalTheme.panelOf(context),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.zero,
+        side: BorderSide(color: TerminalTheme.lineOf(context)),
+      ),
       child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         leading: Icon(
           Icons.check_circle,
-          color: Theme.of(context).colorScheme.primary,
+          color: TerminalTheme.okOf(context),
         ),
         title: Text(
           task.title,
@@ -197,17 +199,22 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.check_circle_outline,
-            size: 56,
-            color: Theme.of(context).hintColor,
+          Text(
+            '> sin tareas completadas',
+            style: TextStyle(
+              fontFamily: TerminalTheme.pixelFamily,
+              fontSize: 17,
+              color: TerminalTheme.mutedOf(context),
+            ),
           ),
-          const SizedBox(height: 16),
-          const Text('Sin tareas completadas'),
           const SizedBox(height: 8),
           Text(
             'Las tareas que completes aparecerán acá',
-            style: TextStyle(color: Theme.of(context).hintColor),
+            style: TextStyle(
+              fontFamily: TerminalTheme.monoFamily,
+              fontSize: 13,
+              color: TerminalTheme.mutedOf(context),
+            ),
           ),
         ],
       ),

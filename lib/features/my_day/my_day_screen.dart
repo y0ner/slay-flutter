@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/theme/terminal_theme.dart';
 import '../../data/models/category.dart';
 import '../../data/models/task.dart';
 import '../../data/repositories/category_repository.dart';
@@ -11,8 +12,9 @@ import '../../widgets/delete_task_dialog.dart';
 import '../../widgets/edit_task_dialog.dart';
 import '../../widgets/task_card.dart';
 
-/// Pantalla "Mi Día": muestra las tareas cuya `date` (o `reminder`)
-/// cae en el día de hoy, ordenadas por sort_order.
+/// Pantalla "Mi Día" — estilo terminal: titular en pixel font, fecha como
+/// salida de consola (prefijo `>` en naranja), y el listado con separadores
+/// de 1px en lugar de tarjetas flotantes.
 class MyDayScreen extends ConsumerWidget {
   const MyDayScreen({super.key});
 
@@ -54,57 +56,99 @@ class MyDayScreen extends ConsumerWidget {
         return a.sortOrder.compareTo(b.sortOrder);
       });
 
+    final pending = todayTasks.where((t) => !t.isCompleted).length;
+    final accent = TerminalTheme.accentOf(context);
+    final muted = TerminalTheme.mutedOf(context);
+    final line = TerminalTheme.lineOf(context);
+
     return RefreshIndicator(
+      color: accent,
+      backgroundColor: TerminalTheme.panelOf(context),
       onRefresh: () => ref.refresh(tasksStreamProvider.future),
       child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(24, 32, 24, 96),
+        padding: const EdgeInsets.fromLTRB(20, 28, 20, 96),
         itemCount: todayTasks.length + 1,
         itemBuilder: (context, i) {
           if (i == 0) {
             return Padding(
-              padding: const EdgeInsets.only(bottom: 24),
+              padding: const EdgeInsets.only(bottom: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Mi Día',
-                      style: Theme.of(context).textTheme.displaySmall),
-                  const SizedBox(height: 4),
+                  // Salida de consola: prompt + fecha de hoy.
+                  Row(
+                    children: [
+                      Text(
+                        '> ',
+                        style: TextStyle(
+                          fontFamily: TerminalTheme.pixelFamily,
+                          fontSize: 16,
+                          color: accent,
+                        ),
+                      ),
+                      Text(
+                        DateFormat('EEEE, d MMMM', 'es_ES')
+                            .format(DateTime.now())
+                            .replaceFirstMapped(
+                                RegExp(r'^\w'), (m) => m[0]!.toUpperCase()),
+                        style: TextStyle(
+                          fontFamily: TerminalTheme.monoFamily,
+                          fontSize: 13.5,
+                          color: muted,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
                   Text(
-                    DateFormat('EEEE, d MMMM', 'es_ES')
-                        .format(DateTime.now())
-                        .replaceFirstMapped(RegExp(r'^\w'), (m) => m[0]!.toUpperCase()),
+                    'Mi Día',
+                    style: Theme.of(context).textTheme.displaySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  // Contador estilo terminal: [N] pendientes.
+                  Text(
+                    pending == 0
+                        ? '[0] pendientes — día limpio'
+                        : '[${pending}] pendiente${pending == 1 ? '' : 's'}',
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w500,
+                      fontFamily: TerminalTheme.monoFamily,
+                      fontSize: 13,
+                      color: pending == 0 ? TerminalTheme.okOf(context) : accent,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  Divider(color: line, thickness: 1, height: 1),
                 ],
               ),
             );
           }
           final t = todayTasks[i - 1];
           final cat = categories.where((c) => c.id == t.categoryId).firstOrNull;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: TaskCard(
-              task: t,
-              category: cat,
-              onTap: () => context.push('/subtasks/${t.id}'),
-              onToggle: () async {
-                    await ref.read(taskRepositoryProvider).toggleComplete(
-                        t.id, !t.isCompleted);
-                    ref.invalidate(tasksStreamProvider);
-                  },
-              onEdit: () => showDialog(
-                context: context,
-                builder: (_) => EditTaskDialog(task: t),
+          return Column(
+            children: [
+              TaskCard(
+                task: t,
+                category: cat,
+                onTap: () => context.push('/subtasks/${t.id}'),
+                onToggle: () async {
+                  await ref.read(taskRepositoryProvider).toggleComplete(
+                      t.id, !t.isCompleted);
+                  ref.invalidate(tasksStreamProvider);
+                },
+                onEdit: () => showDialog(
+                  context: context,
+                  builder: (_) => EditTaskDialog(task: t),
+                ),
+                onDelete: () => showDialog(
+                  context: context,
+                  builder: (_) => DeleteTaskDialog(task: t),
+                ),
+                onSendToFocus: () => context.go('/pomodoro?task=${t.id}'),
               ),
-              onDelete: () => showDialog(
-                context: context,
-                builder: (_) => DeleteTaskDialog(task: t),
-              ),
-              onSendToFocus: () => context.go('/pomodoro?task=${t.id}'),
-            ),
+              Divider(color: line, thickness: 1, height: 1),
+            ],
           );
         },
       ),

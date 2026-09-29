@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/theme/terminal_theme.dart';
 import '../../data/models/task.dart';
 import '../../data/repositories/task_repository.dart';
 
@@ -42,7 +43,16 @@ class SubTaskListScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (list) => list.isEmpty
-            ? const Center(child: Text('Sin subtareas'))
+            ? Center(
+                child: Text(
+                  '> sin subtareas',
+                  style: TextStyle(
+                    fontFamily: TerminalTheme.pixelFamily,
+                    fontSize: 16,
+                    color: TerminalTheme.mutedOf(context),
+                  ),
+                ),
+              )
             : ListView.builder(
                 itemCount: list.length,
                 itemBuilder: (_, i) {

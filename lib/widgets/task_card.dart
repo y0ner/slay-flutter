@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../core/theme/terminal_theme.dart';
 import '../data/local/pomodoro_stats.dart';
 import '../data/models/category.dart';
 import '../data/models/task.dart';
@@ -78,10 +79,9 @@ class _TaskCardState extends ConsumerState<TaskCard> {
   Widget build(BuildContext context) {
     final task = widget.task;
     final cat = widget.category;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final catColor = cat != null
         ? _parseColor(cat.color)
-        : Theme.of(context).colorScheme.primary;
+        : TerminalTheme.accentOf(context);
 
     final subtle = Theme.of(context).colorScheme.onSurfaceVariant;
     final dateChipColor = Theme.of(context).colorScheme.surface;
@@ -122,14 +122,13 @@ class _TaskCardState extends ConsumerState<TaskCard> {
         icon: Icons.edit,
       ),
       child: Card(
-        elevation: isDark ? 0 : 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: subtle.withValues(alpha: 0.15), width: 1),
+        elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.zero,
         ),
-        color: Theme.of(context).colorScheme.surface,
+        color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.zero,
           onTap: widget.onTap,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 12, 4, 8),
@@ -141,19 +140,19 @@ class _TaskCardState extends ConsumerState<TaskCard> {
                 //    incluso en cards reordenadas.
                 if (widget.orderNumber != null)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 6, 8, 0),
+                    padding: const EdgeInsets.fromLTRB(4, 4, 8, 0),
                     child: SizedBox(
                       width: 28,
                       child: Text(
                         '${widget.orderNumber}',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                          fontFamily: TerminalTheme.pixelFamily,
+                          fontSize: 17,
                           color: task.isCompleted
                               ? subtle
-                              : Theme.of(context).colorScheme.primary,
-                          height: 1.0,
+                              : TerminalTheme.accentOf(context),
+                          height: 1.2,
                         ),
                       ),
                     ),
@@ -193,8 +192,9 @@ class _TaskCardState extends ConsumerState<TaskCard> {
                         Text(
                           '${task.subtaskCount} subtareas',
                           style: TextStyle(
+                            fontFamily: TerminalTheme.monoFamily,
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.primary,
+                            color: TerminalTheme.accentOf(context),
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -228,9 +228,9 @@ class _TaskCardState extends ConsumerState<TaskCard> {
                                   visualDensity: VisualDensity.compact,
                                   tooltip: 'Enviar a Focus',
                                   onPressed: widget.onSendToFocus,
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.timer,
-                                    color: Color(0xFF10B981),
+                                    color: TerminalTheme.accentOf(context),
                                     size: 18,
                                   ),
                                 ),
@@ -241,8 +241,8 @@ class _TaskCardState extends ConsumerState<TaskCard> {
                                 icon: Icon(
                                   _justCopied ? Icons.check : Icons.content_copy,
                                   color: _justCopied
-                                      ? const Color(0xFF10B981)
-                                      : Theme.of(context).colorScheme.primary,
+                                      ? TerminalTheme.okOf(context)
+                                      : TerminalTheme.accentOf(context),
                                   size: 18,
                                 ),
                               ),
@@ -296,12 +296,11 @@ class _PomodoroChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const tomato = Color(0xFFEF4444); // mismo rojo del emoji 🍅
+    const tomato = TerminalTheme.dayHeart;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
-        color: tomato.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: tomato.withValues(alpha: 0.45)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -311,6 +310,7 @@ class _PomodoroChip extends StatelessWidget {
           Text(
             '$count',
             style: const TextStyle(
+              fontFamily: TerminalTheme.monoFamily,
               fontSize: 11,
               color: tomato,
               fontWeight: FontWeight.bold,
@@ -329,19 +329,27 @@ class _CategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Chip de categoría: cuadradito del color + nombre en mono.
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
       ),
-      child: Text(
-        name,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 7, height: 7, color: color),
+          const SizedBox(width: 5),
+          Text(
+            name,
+            style: TextStyle(
+              fontFamily: TerminalTheme.monoFamily,
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -366,8 +374,7 @@ class _DateChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -376,7 +383,11 @@ class _DateChip extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             text,
-            style: TextStyle(fontSize: 11, color: color),
+            style: TextStyle(
+              fontFamily: TerminalTheme.monoFamily,
+              fontSize: 11,
+              color: color,
+            ),
           ),
         ],
       ),
@@ -399,10 +410,7 @@ class _SwipeBg extends StatelessWidget {
     return Container(
       alignment: alignment,
       padding: const EdgeInsets.symmetric(horizontal: 24),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(20),
-      ),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.8)),
       child: Icon(icon, color: Colors.white, size: 28),
     );
   }

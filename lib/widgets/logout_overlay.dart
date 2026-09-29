@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../core/theme/slay_theme.dart';
+import '../core/theme/terminal_theme.dart';
 import 'shimmer_loader.dart';
 
 /// Overlay fullscreen que se muestra mientras se está cerrando la sesión.
@@ -17,36 +17,32 @@ class LogoutOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Material(
-      // Pintamos el fondo completo con el gradiente del theme para que
+      // Pintamos el fondo completo con el color del theme para que
       // el frame intermedio entre HomeShell dispose y LoginScreen mount
       // no se vea como un pantallazo negro en dark mode.
-      color: Colors.transparent,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: slayBackgroundGradient(context),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Spinner shimmer con el primary color (verde emerald).
-              ShimmerLoader(
-                size: 44,
-                strokeWidth: 3,
-                color: theme.colorScheme.primary,
+      color: TerminalTheme.bgOf(context),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Spinner con el acento naranja de la casa.
+            ShimmerLoader(
+              size: 44,
+              strokeWidth: 3,
+              color: TerminalTheme.accentOf(context),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              '> cerrando sesión…',
+              style: TextStyle(
+                fontFamily: TerminalTheme.monoFamily,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: TerminalTheme.fgOf(context),
               ),
-              const SizedBox(height: 20),
-              Text(
-                'Cerrando sesión…',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: theme.colorScheme.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

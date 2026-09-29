@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/theme/terminal_theme.dart';
 import '../../data/models/category.dart';
 import '../../data/models/task.dart';
 import '../../data/repositories/category_repository.dart';
@@ -32,32 +33,92 @@ class TaskListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final categoriesAsync = ref.watch(categoriesStreamProvider);
+    final cachedCategoriesAsync = ref.watch(cachedCategoriesStreamProvider);
     final tasksAsync = ref.watch(tasksStreamProvider);
+    final cachedTasksAsync = ref.watch(cachedTasksStreamProvider);
 
-    return categoriesAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
-      data: (cats) {
-        final cat = cats.firstWhere(
-          (c) => c.id == categoryId,
-          orElse: () => Category(
-              id: categoryId,
-              name: '?',
-              color: '#888888',
-              sortOrder: 0),
-        );
-        return tasksAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Error: $e')),
-          data: (allTasks) {
-            // Ordenamos SOLO por sortOrder. Las completadas conservan
-            // su posición (con line-through). El número que se muestra
-            // a la izquierda es 1-based y refleja la posición visual.
-            final list = allTasks
-                .where((t) => t.categoryId == categoryId)
-                .toList()
-              ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-            return Scaffold(
+    final cats = categoriesAsync.valueOrNull ?? cachedCategoriesAsync.valueOrNull ?? <Category>[];
+    final allTasks = tasksAsync.valueOrNull ?? cachedTasksAsync.valueOrNull;
+
+    if (cats.isEmpty && categoriesAsync.isLoading && cachedCategoriesAsync.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (cats.isEmpty && categoriesAsync.hasError && (cachedCategoriesAsync.valueOrNull?.isEmpty ?? true)) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_rounded, size: 48, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text('No se pudieron cargar las categorías'),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () => ref.invalidate(categoriesStreamProvider),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reintentar'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (allTasks == null && tasksAsync.isLoading && cachedTasksAsync.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (allTasks == null && tasksAsync.hasError && (cachedTasksAsync.valueOrNull?.isEmpty ?? true)) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_rounded, size: 48, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text('No se pudieron cargar las tareas'),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () => ref.invalidate(tasksStreamProvider),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reintentar'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final cat = cats.firstWhere(
+      (c) => c.id == categoryId,
+      orElse: () => Category(
+          id: categoryId,
+          name: '?',
+          color: '#888888',
+          sortOrder: 0),
+    );
+
+    // Ordenamos SOLO por sortOrder. Las completadas conservan
+    // su posición (con line-through). El número que se muestra
+    // a la izquierda es 1-based y refleja la posición visual.
+    final list = (allTasks ?? <Task>[])
+        .where((t) => t.categoryId == categoryId)
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    return Scaffold(
               backgroundColor: Colors.transparent,
               appBar: AppBar(
                 leading: IconButton(
@@ -77,7 +138,16 @@ class TaskListScreen extends ConsumerWidget {
               // "Nueva tarea en esta categoría" con el categoryId
               // pre-seleccionado).
               body: list.isEmpty
-                  ? const Center(child: Text('Sin tareas en esta categoría'))
+                  ? Center(
+                      child: Text(
+                        '> sin tareas en esta categoría',
+                        style: TextStyle(
+                          fontFamily: TerminalTheme.pixelFamily,
+                          fontSize: 16,
+                          color: TerminalTheme.mutedOf(context),
+                        ),
+                      ),
+                    )
                   : ReorderableListView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
                       itemCount: list.length,
@@ -86,9 +156,15 @@ class TaskListScreen extends ConsumerWidget {
                       // ve exactamente qué está moviendo.
                       proxyDecorator: (child, index, animation) =>
                           Material(
-                        elevation: 6,
-                        color: Colors.transparent,
-                        borderRadius: BorderRadius.circular(20),
+                        elevation: 0,
+                        color: TerminalTheme.panelOf(context),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.zero,
+                          side: BorderSide(
+                            color: TerminalTheme.accentOf(context),
+                            width: 1.4,
+                          ),
+                        ),
                         child: child,
                       ),
                       onReorder: (oldIndex, newIndex) =>
@@ -126,10 +202,6 @@ class TaskListScreen extends ConsumerWidget {
                       ),
                     ),
             );
-          },
-        );
-      },
-    );
   }
 
   /// Maneja el reorder end-to-end:

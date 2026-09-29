@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/theme/slay_theme.dart';
+import '../../core/theme/terminal_theme.dart';
 import '../../data/models/category.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/task_repository.dart';
@@ -53,10 +53,10 @@ class HomeShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final fab = _fabForRoute(context);
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(gradient: slayBackgroundGradient(context)),
-        child: child,
-      ),
+      // El Scaffold ya pinta el fondo (scaffoldBackgroundColor). Antes
+      // había un Container con gradiente; un Container con `color:` crea
+      // un ColoredBox que oculta el ink de los ListTile del body.
+      body: child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => context.go(_tabs[i].path),

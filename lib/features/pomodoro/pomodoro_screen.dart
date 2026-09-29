@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../core/theme/terminal_theme.dart';
 import '../../data/local/pomodoro_stats.dart';
 import '../../data/models/category.dart';
 import '../../data/models/pomodoro_preset.dart';
@@ -355,11 +356,13 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
       };
 
   Color get _accentForKind {
-    final scheme = Theme.of(context).colorScheme;
     return switch (_kind) {
-      SessionKind.work => scheme.primary,
-      SessionKind.shortBreak => const Color(0xFFFB923C), // orange-400
-      SessionKind.longBreak => const Color(0xFF60A5FA), // blue-400
+      // Naranja de la casa para trabajo.
+      SessionKind.work => TerminalTheme.accentOf(context),
+      // Ámbar "construyendo" para descansos (misma rampa cálida, apagada).
+      SessionKind.shortBreak => TerminalTheme.buildingOf(context),
+      // Verde ok para el gran descanso.
+      SessionKind.longBreak => TerminalTheme.okOf(context),
     };
   }
 
@@ -795,9 +798,7 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
               Row(
                 children: [
                   Text('Pomodoro',
-                      style: theme.textTheme.displaySmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      )),
+                      style: theme.textTheme.displaySmall),
                   const Spacer(),
                   IconButton(
                     tooltip: 'Configuración',
@@ -865,52 +866,80 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                                 child: CircularProgressIndicator(
                                   value: progress,
                                   strokeWidth: 12,
-                                  strokeCap: StrokeCap.round,
+                                  strokeCap: StrokeCap.square,
                                   backgroundColor:
-                                      scheme.surfaceContainerHighest,
+                                      TerminalTheme.lineOf(context),
                                   valueColor: AlwaysStoppedAnimation(accent),
                                 ),
                               ),
-                              Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(_iconForKind,
-                                          color: accent, size: 18),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        _labelForKind,
-                                        style: theme.textTheme.titleMedium
-                                            ?.copyWith(
-                                          color: accent,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
+                              // Recuadro central tipo consola.
+                              Container(
+                                width: 232,
+                                height: 232,
+                                decoration: BoxDecoration(
+                                  color: TerminalTheme.panelOf(context),
+                                  border: Border.all(
+                                    color: TerminalTheme.lineOf(context),
+                                    width: 1,
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    _format(_remaining),
-                                    style: const TextStyle(
-                                      fontSize: 64,
-                                      fontWeight: FontWeight.w700,
-                                      fontFeatures: [
-                                        FontFeature.tabularFigures(),
+                                ),
+                                alignment: Alignment.center,
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        // Cuadradito de estado como los
+                                        // labels del login.
+                                        Container(
+                                          width: 7,
+                                          height: 7,
+                                          color: accent,
+                                        ),
+                                        const SizedBox(width: 7),
+                                        Text(
+                                          _labelForKind.toUpperCase(),
+                                          style: TextStyle(
+                                            fontFamily:
+                                                TerminalTheme.monoFamily,
+                                            fontSize: 11.5,
+                                            letterSpacing: 1.2,
+                                            color: accent,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
                                       ],
                                     ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${(_totalForKind - _remaining) ~/ 60 + (_totalForKind - _remaining) % 60 ~/ 60} '
-                                    'de ${_totalForKind ~/ 60} min',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: scheme.onSurfaceVariant,
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      _format(_remaining),
+                                      style: TextStyle(
+                                        fontFamily:
+                                            TerminalTheme.pixelFamily,
+                                        fontSize: 48,
+                                        height: 1.1,
+                                        color: TerminalTheme.fgOf(context),
+                                        fontFeatures: [
+                                          FontFeature.tabularFigures(),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      '${(_totalForKind - _remaining) ~/ 60 + (_totalForKind - _remaining) % 60 ~/ 60} '
+                                      'de ${_totalForKind ~/ 60} min',
+                                      style: TextStyle(
+                                        fontFamily:
+                                            TerminalTheme.monoFamily,
+                                        fontSize: 12,
+                                        color:
+                                            TerminalTheme.mutedOf(context),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
@@ -924,10 +953,10 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
               // ── Stats ───────────────────────────────────
               Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(16),
+                  color: TerminalTheme.panelOf(context),
+                  border: Border.all(color: TerminalTheme.lineOf(context)),
                 ),
                 child: Wrap(
                   spacing: 16,
@@ -939,19 +968,19 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                       icon: Icons.local_fire_department_outlined,
                       label: 'Hoy',
                       value: '${ref.watch(pomodoroStatsProvider).today}',
-                      color: const Color(0xFFFB923C),
+                      color: TerminalTheme.accentOf(context),
                     ),
                     _Stat(
                       icon: Icons.bolt_outlined,
                       label: 'Racha',
                       value: '${ref.watch(pomodoroStatsProvider.notifier).currentStreak()}d',
-                      color: const Color(0xFFEAB308),
+                      color: TerminalTheme.buildingOf(context),
                     ),
                     _Stat(
                       icon: Icons.timer_outlined,
                       label: 'Preset',
                       value: _preset.label,
-                      color: scheme.primary,
+                      color: TerminalTheme.fgOf(context),
                     ),
                     _Stat(
                       icon: Icons.loop,
@@ -969,11 +998,9 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _CircleAction(
+                  _SquareAction(
                     icon: Icons.refresh,
                     tooltip: 'Reiniciar',
-                    color: scheme.surfaceContainerHighest,
-                    iconColor: scheme.onSurface,
                     onPressed: _reset,
                   ),
                   _PlayPauseButton(
@@ -983,11 +1010,9 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                     onPressed: _toggle,
                     onDisabledTap: _pickTask,
                   ),
-                  _CircleAction(
+                  _SquareAction(
                     icon: Icons.skip_next,
                     tooltip: 'Saltar',
-                    color: scheme.surfaceContainerHighest,
-                    iconColor: scheme.onSurface,
                     onPressed: _skip,
                   ),
                 ],
@@ -1081,7 +1106,8 @@ class _CycleDots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final accent = TerminalTheme.accentOf(context);
+    final line = TerminalTheme.lineOf(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -1090,15 +1116,16 @@ class _CycleDots extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 3),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 300),
+              // Cuadraditos: los completos llenos, el activo a media
+              // tinta, los futuros en color de línea. Cero redondeos.
               width: i == done && isBreak ? 22 : 10,
               height: 10,
               decoration: BoxDecoration(
                 color: i < done
-                    ? scheme.primary
+                    ? accent
                     : (i == done
-                        ? scheme.primary.withValues(alpha: 0.4)
-                        : scheme.outline.withValues(alpha: 0.3)),
-                borderRadius: BorderRadius.circular(5),
+                        ? accent.withValues(alpha: 0.4)
+                        : line),
               ),
             ),
           ),
@@ -1121,7 +1148,6 @@ class _Stat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1132,34 +1158,35 @@ class _Stat extends StatelessWidget {
             const SizedBox(width: 4),
             Text(label,
                 style: TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
                     fontSize: 11,
-                    color: scheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500)),
+                    letterSpacing: 0.6,
+                    color: TerminalTheme.mutedOf(context),
+                    fontWeight: FontWeight.w600)),
           ],
         ),
         const SizedBox(height: 2),
         Text(value,
             style: TextStyle(
-                fontSize: 14,
-                color: scheme.onSurface,
-                fontWeight: FontWeight.w700)),
+                fontFamily: TerminalTheme.pixelFamily,
+                fontSize: 15,
+                color: color,
+                fontWeight: FontWeight.w400)),
       ],
     );
   }
 }
 
-class _CircleAction extends StatelessWidget {
-  const _CircleAction({
+/// Acción secundaria cuadrada: panel con borde 1px, sin relleno
+/// alrededor. Cero redondeos, cero sombras.
+class _SquareAction extends StatelessWidget {
+  const _SquareAction({
     required this.icon,
     required this.tooltip,
-    required this.color,
-    required this.iconColor,
     required this.onPressed,
   });
   final IconData icon;
   final String tooltip;
-  final Color color;
-  final Color iconColor;
   final VoidCallback onPressed;
 
   @override
@@ -1167,15 +1194,21 @@ class _CircleAction extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: color,
-        shape: const CircleBorder(),
+        color: TerminalTheme.panelOf(context),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         child: InkWell(
-          customBorder: const CircleBorder(),
           onTap: onPressed,
-          child: SizedBox(
+          child: Container(
             width: 52,
             height: 52,
-            child: Icon(icon, color: iconColor, size: 26),
+            decoration: BoxDecoration(
+              border: Border.all(color: TerminalTheme.lineOf(context)),
+            ),
+            child: Icon(
+              icon,
+              color: TerminalTheme.fgOf(context),
+              size: 24,
+            ),
           ),
         ),
       ),
@@ -1201,11 +1234,14 @@ class _PlayPauseButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final color = enabled
         ? accent
-        : scheme.onSurfaceVariant.withValues(alpha: 0.3);
-    final iconColor = enabled ? Colors.white : scheme.onSurfaceVariant;
+        : TerminalTheme.lineOf(context);
+    final iconColor = enabled
+        ? (Theme.of(context).brightness == Brightness.dark
+            ? TerminalTheme.nightBg
+            : TerminalTheme.dayBg)
+        : TerminalTheme.mutedOf(context);
     return Tooltip(
       message: enabled
           ? (running ? 'Pausar' : 'Iniciar')
@@ -1215,11 +1251,9 @@ class _PlayPauseButton extends StatelessWidget {
         height: 80,
         child: Material(
           color: color,
-          shape: const CircleBorder(),
-          elevation: enabled ? 6 : 0,
-          shadowColor: enabled ? accent.withValues(alpha: 0.5) : null,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+          elevation: 0,
           child: InkWell(
-            customBorder: const CircleBorder(),
             onTap: enabled ? onPressed : onDisabledTap,
             child: Icon(
               running ? Icons.pause : Icons.play_arrow,
@@ -1361,7 +1395,7 @@ class _TaskPickerOverlayState extends ConsumerState<_TaskPickerOverlay> {
                           prefixIcon: const Icon(Icons.search),
                           isDense: true,
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.zero,
                           ),
                         ),
                         onChanged: (v) => setState(() => _filter = v),
@@ -1782,8 +1816,7 @@ class _CustomFields extends StatelessWidget {
   });
   final TextEditingController workCtrl;
   final TextEditingController shortCtrl;
-  final TextEditingController longCtrl;
-  final TextEditingController cyclesCtrl;
+  final TextEditingController longCtrl;    final TextEditingController cyclesCtrl;
 
   @override
   Widget build(BuildContext context) {
@@ -1793,7 +1826,7 @@ class _CustomFields extends StatelessWidget {
           hintText: hint,
           isDense: true,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.zero,
           ),
           suffixText: 'min',
         );
@@ -1802,9 +1835,8 @@ class _CustomFields extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: scheme.primaryContainer.withValues(alpha: 0.25),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
+          color: TerminalTheme.panelOf(context),
+          border: Border.all(color: TerminalTheme.lineOf(context)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1848,7 +1880,7 @@ class _CustomFields extends StatelessWidget {
                       hintText: '4',
                       isDense: true,
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.zero,
                       ),
                     ),
                   ),

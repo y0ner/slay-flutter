@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:device_calendar/device_calendar.dart';
 
 import '../../core/state/logging_out_provider.dart';
+import '../../core/theme/terminal_theme.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../notifications/calendar_service.dart';
@@ -27,11 +28,15 @@ class SettingsScreen extends ConsumerWidget {
         const SizedBox(height: 24),
 
         // ── Apariencia ───────────────────────────────────
-        const Padding(
-          padding: EdgeInsets.fromLTRB(24, 8, 24, 4),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
           child: Text('APARIENCIA',
               style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+                  fontFamily: TerminalTheme.monoFamily,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.0,
+                  color: TerminalTheme.mutedOf(context))),
         ),
         ListTile(
           leading: const Icon(Icons.brightness_6_outlined),
@@ -65,11 +70,15 @@ class SettingsScreen extends ConsumerWidget {
         const Divider(),
 
         // ── Organización ─────────────────────────────────
-        const Padding(
-          padding: EdgeInsets.fromLTRB(24, 8, 24, 4),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
           child: Text('ORGANIZACIÓN',
               style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+                  fontFamily: TerminalTheme.monoFamily,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.0,
+                  color: TerminalTheme.mutedOf(context))),
         ),
         ListTile(
           leading: const Icon(Icons.category_outlined),
@@ -91,11 +100,15 @@ class SettingsScreen extends ConsumerWidget {
         const Divider(),
 
         // ── Información ──────────────────────────────────
-        const Padding(
-          padding: EdgeInsets.fromLTRB(24, 8, 24, 4),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
           child: Text('INFORMACIÓN',
               style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+                  fontFamily: TerminalTheme.monoFamily,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.0,
+                  color: TerminalTheme.mutedOf(context))),
         ),
         ListTile(
           leading: const Icon(Icons.info_outline),

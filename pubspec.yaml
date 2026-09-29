@@ -59,6 +59,9 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
 
+  # Generación de íconos de la app a partir de assets/icon/.
+  flutter_launcher_icons: ^0.14.4
+
   # Generadores de código
   build_runner: ^2.4.13
   freezed: ^2.5.7
@@ -69,6 +72,20 @@ dev_dependencies:
 
   # Generadores de Drift
   drift_dev: ^2.20.0
+
+flutter_launcher_icons:
+  image_path: "assets/icon/icon_1024.png"
+  android: true
+  # Adaptive (Android 8+): fondo plano + chulito con safe zone.
+  adaptive_icon_background: "assets/icon/icon_background.png"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  adaptive_icon_monochrome: "assets/icon/icon_monochrome.png"
+  # Legacy (Android 7-) y otras plataformas.
+  min_sdk_android: 21
+  windows:
+    generate: true
+    image_path: "assets/icon/icon_1024.png"
+    icon_size: 48
 
 flutter:
   uses-material-design: true

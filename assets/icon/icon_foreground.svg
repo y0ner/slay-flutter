@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Capa foreground del adaptive icon: el chulito más chico y centrado
+       para respetar la safe zone (66%) de los iconos adaptativos. -->
+  <path d="M 325 535 L 460 665 L 705 375"
+        fill="none"
+        stroke="#FC784B"
+        stroke-width="95"
+        stroke-linecap="butt"
+        stroke-linejoin="miter"/>
+</svg>

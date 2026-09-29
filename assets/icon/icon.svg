@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Icono de Slay: chulito naranja estilo terminal sobre marrón oscuro.
+       Trazo cuadrado (caps planos) como el lenguaje visual de la app. -->
+  <rect width="1024" height="1024" fill="#17110D"/>
+  <path d="M 265 545 L 445 720 L 765 335"
+        fill="none"
+        stroke="#FC784B"
+        stroke-width="125"
+        stroke-linecap="butt"
+        stroke-linejoin="miter"/>
+</svg>

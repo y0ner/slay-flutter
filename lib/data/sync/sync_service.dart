@@ -256,7 +256,9 @@ class SyncService {
         s.contains('cert') ||
         s.contains('refused') ||
         s.contains('reset') ||
-        s.contains('closed');
+        s.contains('closed') ||
+        s.contains('pgrst303') ||
+        s.contains('jwt issued at future');
   }
 
   Future<void> _bumpAttempts(int id, String err) async {

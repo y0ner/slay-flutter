@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/router/app_router.dart';
+import '../../core/supabase/supabase_retry.dart';
 import '../local/app_database.dart';
 import '../models/category.dart' show TaskStatus;
 import '../models/task.dart';
@@ -22,6 +23,26 @@ class TaskRepository {
   final SyncService? syncService;
   final AppDatabase? db;
 
+  Future<List<Task>> _getCached() async {
+    if (db == null) return [];
+    try {
+      final rows = await db!.allCachedTasks();
+      return rows.map((r) => Task(
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        categoryId: r.categoryId,
+        date: r.date,
+        reminder: r.reminder,
+        sortOrder: r.sortOrder,
+        subtaskCount: r.subtaskCount,
+        isLocal: r.isLocal,
+      )).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ── Tareas ────────────────────────────────────────────────
 
   /// Stream reactivo que emite la lista actual de tareas del usuario
@@ -29,7 +50,14 @@ class TaskRepository {
   Stream<List<Task>> watchTasks() {
     final controller = StreamController<List<Task>>.broadcast();
 
-    // 1) Emisión inicial
+    // Emisión inmediata de cache local si existe (offline-first / carga instantánea).
+    _getCached().then((cached) {
+      if (cached.isNotEmpty && !controller.isClosed) {
+        controller.add(cached);
+      }
+    });
+
+    // 1) Emisión y sync inicial
     _refresh(controller);
 
     // 2) Re-emitir cuando cambia la tabla
@@ -57,7 +85,12 @@ class TaskRepository {
       // Hidratar cache local para que la UI pueda arrancar sin red.
       await _hydrateCache(list);
     } catch (e) {
-      if (!controller.isClosed) controller.addError(e);
+      final cached = await _getCached();
+      if (cached.isNotEmpty) {
+        if (!controller.isClosed) controller.add(cached);
+      } else {
+        if (!controller.isClosed) controller.addError(e);
+      }
     }
   }
 
@@ -134,19 +167,21 @@ class TaskRepository {
 
   /// Devuelve todas las tareas del usuario actual, ordenadas.
   Future<List<Task>> getAll() async {
-    final res = await _client
-        .from('tasks')
-        .select('*, subtasks:subtasks(count)')
-        .order('sort_order');
-    final list = res as List<dynamic>;
-    return list
-        .map((e) => Task.fromJson({
-              ...Map<String, dynamic>.from(e),
-              'subtask_count': (e['subtasks'] is List && (e['subtasks'] as List).isNotEmpty)
-                  ? (e['subtasks'][0]['count'] ?? 0)
-                  : 0,
-            }))
-        .toList();
+    return retrySupabaseOperation(() async {
+      final res = await _client
+          .from('tasks')
+          .select('*, subtasks:subtasks(count)')
+          .order('sort_order');
+      final list = res as List<dynamic>;
+      return list
+          .map((e) => Task.fromJson({
+                ...Map<String, dynamic>.from(e),
+                'subtask_count': (e['subtasks'] is List && (e['subtasks'] as List).isNotEmpty)
+                    ? (e['subtasks'][0]['count'] ?? 0)
+                    : 0,
+              }))
+          .toList();
+    });
   }
 
   /// Crea una tarea. Devuelve la fila insertada.
@@ -321,12 +356,14 @@ class TaskRepository {
   }
 
   Future<List<SubTask>> getSubtasks(String taskId) async {
-    final res = await _client
-        .from('subtasks')
-        .select()
-        .eq('task_id', taskId)
-        .order('sort_order');
-    return (res as List).map((e) => SubTask.fromJson(Map<String, dynamic>.from(e))).toList();
+    return retrySupabaseOperation(() async {
+      final res = await _client
+          .from('subtasks')
+          .select()
+          .eq('task_id', taskId)
+          .order('sort_order');
+      return (res as List).map((e) => SubTask.fromJson(Map<String, dynamic>.from(e))).toList();
+    });
   }
 
   Future<SubTask> createSubtask({

@@ -140,7 +140,8 @@ class AppDatabase extends _$AppDatabase {
   Future<List<CachedCategory>> allCachedCategories() =>
       select(cachedCategories).get();
   Stream<List<CachedCategory>> watchCachedCategories() =>
-      select(cachedCategories).watch();
+      (select(cachedCategories)..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+          .watch();
   Future<void> upsertCategory(CachedCategoriesCompanion c) =>
       into(cachedCategories).insertOnConflictUpdate(c);
   Future<void> upsertManyCategories(List<CachedCategoriesCompanion> list) =>

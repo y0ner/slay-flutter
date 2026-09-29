@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/router/app_router.dart';
+import '../../core/supabase/supabase_retry.dart';
 import '../local/app_database.dart';
 import '../models/category.dart';
 import '../sync/sync_service.dart';
@@ -16,6 +17,22 @@ class CategoryRepository {
 
   StreamController<List<Category>>? _activeController;
   Timer? _debounceTimer;
+
+  Future<List<Category>> _getCached() async {
+    if (db == null) return [];
+    try {
+      final rows = await db!.allCachedCategories();
+      return rows.map((r) => Category(
+        id: r.id,
+        name: r.name,
+        color: r.color,
+        sortOrder: r.sortOrder,
+        taskCount: r.taskCount,
+      )).toList();
+    } catch (_) {
+      return [];
+    }
+  }
 
   void _scheduleRefresh(StreamController<List<Category>> controller) {
     _debounceTimer?.cancel();
@@ -34,6 +51,14 @@ class CategoryRepository {
   Stream<List<Category>> watchCategories() {
     final controller = StreamController<List<Category>>.broadcast();
     _activeController = controller;
+
+    // Emisión inmediata de cache local si existe (offline-first, 0 latencia).
+    _getCached().then((cached) {
+      if (cached.isNotEmpty && !controller.isClosed) {
+        controller.add(cached);
+      }
+    });
+
     _refresh(controller);
 
     final channel = _client
@@ -73,7 +98,12 @@ class CategoryRepository {
       if (!controller.isClosed) controller.add(list);
       await _hydrateCache(list);
     } catch (e) {
-      if (!controller.isClosed) controller.addError(e);
+      final cached = await _getCached();
+      if (cached.isNotEmpty) {
+        if (!controller.isClosed) controller.add(cached);
+      } else {
+        if (!controller.isClosed) controller.addError(e);
+      }
     }
   }
 
@@ -133,19 +163,22 @@ class CategoryRepository {
   }
 
   Future<List<Category>> getAll() async {
-    final res = await _client
-        .from('categories')
-        .select('*, tasks:tasks(count)')
-        .order('sort_order');
-    return (res as List).map((e) {
-      final tasksList = e['tasks'] as List?;
-      return Category.fromJson({
-        ...Map<String, dynamic>.from(e),
-        'task_count': (tasksList != null && tasksList.isNotEmpty)
-            ? (tasksList[0]['count'] ?? 0)
-            : 0,
-      });
-    }).toList();
+    return retrySupabaseOperation(() async {
+      final res = await _client
+          .from('categories')
+          .select('*, tasks:tasks(count)')
+          .order('sort_order')
+          .order('created_at');
+      return (res as List).map((e) {
+        final tasksList = e['tasks'] as List?;
+        return Category.fromJson({
+          ...Map<String, dynamic>.from(e),
+          'task_count': (tasksList != null && tasksList.isNotEmpty)
+              ? (tasksList[0]['count'] ?? 0)
+              : 0,
+        });
+      }).toList();
+    });
   }
 
   Future<Category> create({required String name, required String color, int sortOrder = 0}) async {

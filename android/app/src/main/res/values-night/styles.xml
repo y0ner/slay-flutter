@@ -13,9 +13,8 @@
 
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
-        <!-- Mismo gradient verde Slay que el LaunchTheme — clave para
-             no ver el "pantallazo negro" entre el splash nativo y el
-             SplashScreen de Flutter en dark mode. -->
-        <item name="android:windowBackground">@drawable/slay_launch_gradient</item>
+        <!-- Marrón muy oscuro plano (#17110D vía drawable-night) para que
+             la transición splash → app sea invisible en dark mode. -->
+        <item name="android:windowBackground">@drawable/slay_launch_bg</item>
     </style>
 </resources>

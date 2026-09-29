@@ -1,22 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Launch background nativo de Slay.
+  Launch background nativo de Slay — estilo terminal.
 
-  ANTES era solo `@android:color/white` (o `?android:colorBackground`
-  en dark, que daba negro → bug del "pantallazo negro antes del
-  splash").
+  ANTES: gradient verde + isotipo con rayo (estilo viejo emerald).
 
-  AHORA: gradient verde Slay + isotipo centrado. Esto se muestra
-  mientras el engine de Flutter arranca y ejecuta `main()`. Cuando
-  Flutter pinta su primer frame, el SplashScreen toma el control
-  con un diseño coherente (mismo verde + logo animado), así que la
-  transición es invisible.
+  AHORA: papel cálido plano (o marrón oscuro en dark, vía drawable-night)
+  con el prompt `>_` naranja centrado. Esto se muestra mientras el engine
+  de Flutter arranca; cuando pinta su primer frame, el SplashScreen de
+  Flutter toma el control con el mismo diseño, así que la transición es
+  invisible. El ">" como chevron y el guion bajo como bloque, con caps
+  planos igual que en toda la app.
 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@drawable/slay_launch_gradient" />
+    <item android:drawable="@drawable/slay_launch_bg" />
     <item
         android:gravity="center"
         android:width="120dp"
         android:height="120dp"
-        android:drawable="@drawable/slay_launch_logo" />
+        android:drawable="@drawable/slay_launch_prompt" />
 </layer-list>

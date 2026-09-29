@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Mismo contenido que drawable/launch_background.xml pero para la
-  carpeta v21 (Android 5.0+). Necesario porque Android elige el
-  drawable según la versión del SDK en tiempo de ejecución.
+  carpeta v21 (Android 5.0+). Android elige el drawable según la
+  versión del SDK en tiempo de ejecución. Estilo terminal: fondo plano
+  (papel de día, marrón de noche vía -night) + prompt `>_` naranja.
 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@drawable/slay_launch_gradient" />
+    <item android:drawable="@drawable/slay_launch_bg" />
     <item
         android:gravity="center"
         android:width="120dp"
         android:height="120dp"
-        android:drawable="@drawable/slay_launch_logo" />
+        android:drawable="@drawable/slay_launch_prompt" />
 </layer-list>

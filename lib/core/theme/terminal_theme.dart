@@ -436,4 +436,8 @@ class TerminalTheme {
   /// Color de fondo según el modo.
   static Color bgOf(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark ? nightBg : dayBg;
+
+  /// Color de error/corazón según el modo.
+  static Color heartOf(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? nightHeart : dayHeart;
 }

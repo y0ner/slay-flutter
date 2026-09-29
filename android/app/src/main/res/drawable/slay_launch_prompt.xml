@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Prompt `>_` de la casa, para el launch screen nativo.
+
+  El ">" va como vector con caps planos y el guion bajo es un rect
+  naranja separado — igual que el _PromptGlyph del login de Flutter.
+  Versión del launcher sin safe zone (ocupa el bloque completo).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+
+    <!-- ">" : tres trazos gruesos formando el chevron, caps planos -->
+    <path
+        android:pathData="M 34,30 L 62,56 L 34,82"
+        android:strokeColor="#FC784B"
+        android:strokeWidth="16"
+        android:strokeLineCap="butt"
+        android:strokeLineJoin="miter"
+        android:fillColor="#00000000" />
+
+    <!-- "_" : bloque rectangular naranja -->
+    <path
+        android:pathData="M 74,74 L 100,74 L 100,90 L 74,90 Z"
+        android:fillColor="#FC784B" />
+</vector>

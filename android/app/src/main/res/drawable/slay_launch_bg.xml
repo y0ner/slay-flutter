@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fondo del launch screen nativo: papel cálido plano (modo día).
+
+  Cero gradientes: el rediseño terminal usa color plano con bordes.
+  La variante nocturna vive en drawable-night/slay_launch_bg.xml con
+  el marrón muy oscuro de la paleta (#17110D).
+
+  Se usa tanto como windowBackground del NormalTheme (evita el flash
+  entre el splash nativo y la app) como primera capa del
+  launch_background.xml.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FDF6EF" />
+</shape>

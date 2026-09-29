@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fondo del launch screen nativo en modo nocturno: marrón muy oscuro
+  plano de la paleta terminal. Android lo elige solo cuando el sistema
+  está en dark mode (qualifier -night).
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#17110D" />
+</shape>

@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/theme/terminal_theme.dart';
 import '../data/sync/sync_service.dart';
 import '../data/sync/sync_state.dart';
 
-/// Píldora animada que se muestra arriba de la app cuando hay
-/// cambios de conectividad. Equivalente al `NetworkStatusPill`
-/// de Slay-Desktop (kotlin `SlayApp.kt` línea 274).
+/// Banda de estado de red estilo terminal que se muestra arriba de la
+/// app cuando hay cambios de conectividad. Equivalente al
+/// `NetworkStatusPill` de Slay-Desktop.
+///
+/// En vez de colores pastel rellenos (estilo viejo), usa el patrón de
+/// la casa: panel con borde 1px inferior, texto monoespaciado y un
+/// cuadradito de estado con el color semántico de cada estado.
 ///
 /// Estados:
-/// - **offline** → rojo claro, ícono `wifi_off`.
-/// - **syncing** → celeste, ícono `sync` rotando.
-/// - **synced** (2s) → verde, ícono `cloud_done`.
-/// - **error** → naranja, ícono `cloud_off` + texto "N ops pendientes".
+/// - **offline** → cuadradito rojo (heart), ícono `wifi_off`.
+/// - **syncing** → cuadradito ámbar (building), ícono `sync` rotando.
+/// - **synced** (2s) → cuadradito verde (ok), ícono `cloud_done`.
+/// - **error** → cuadradito naranja (accent), ícono `cloud_off` +
+///   "N ops pendientes".
 /// - **idle** → oculto.
 class NetworkStatusPill extends ConsumerWidget {
   const NetworkStatusPill({super.key});
@@ -29,30 +35,33 @@ class NetworkStatusPill extends ConsumerWidget {
       ),
     );
 
-    Color? bg;
+    Color dotColor;
     IconData icon = Icons.cloud_done;
     String text = '';
     bool spinning = false;
 
     if (!status.isOnline) {
-      bg = const Color(0xFFE57373);
+      dotColor = TerminalTheme.heartOf(context);
       icon = Icons.wifi_off;
       text = status.pendingCount > 0
-          ? 'Sin internet · ${status.pendingCount} pendientes'
-          : 'Sin internet';
+          ? 'sin internet · ${status.pendingCount} pendientes'
+          : 'sin internet';
     } else if (status.state == SyncState.syncing) {
-      bg = const Color(0xFF64B5F6);
+      dotColor = TerminalTheme.buildingOf(context);
       icon = Icons.sync;
-      text = 'Sincronizando…';
+      text = 'sincronizando…';
       spinning = true;
     } else if (status.state == SyncState.synced) {
-      bg = const Color(0xFF81C784);
+      dotColor = TerminalTheme.okOf(context);
       icon = Icons.cloud_done;
-      text = 'Sincronizado';
+      text = 'sincronizado';
     } else if (status.state == SyncState.error) {
-      bg = const Color(0xFFFFB74D);
+      dotColor = TerminalTheme.accentOf(context);
       icon = Icons.cloud_off;
       text = '${status.pendingCount} pendientes';
+    } else {
+      // idle → oculto.
+      return const SizedBox.shrink(key: ValueKey('hidden'));
     }
 
     return AnimatedSwitcher(
@@ -62,34 +71,46 @@ class NetworkStatusPill extends ConsumerWidget {
             .animate(anim),
         child: FadeTransition(opacity: anim, child: child),
       ),
-      child: bg == null
-          ? const SizedBox.shrink(key: ValueKey('hidden'))
-          : SafeArea(
-              key: ValueKey('$bg-$text'),
-              child: Container(
-                width: double.infinity,
-                color: bg,
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    spinning
-                        ? _SpinningIcon(icon: icon)
-                        : Icon(icon, color: Colors.white, size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      text,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
+      child: SafeArea(
+        key: ValueKey('$dotColor-$text'),
+        bottom: false,
+        child: Container(
+          width: double.infinity,
+          // Panel de la casa con borde inferior de 1px: banda plana,
+          // sin relleno de color ni sombras.
+          color: TerminalTheme.panelOf(context),
+          padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 16),
+          decoration: BoxDecoration(
+            color: TerminalTheme.panelOf(context),
+            border: Border(
+              bottom: BorderSide(color: TerminalTheme.lineOf(context)),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Cuadradito de estado, igual que los labels del login.
+              Container(width: 7, height: 7, color: dotColor),
+              const SizedBox(width: 8),
+              spinning
+                  ? _SpinningIcon(icon: icon)
+                  : Icon(icon, size: 14, color: TerminalTheme.mutedOf(context)),
+              const SizedBox(width: 8),
+              Text(
+                text,
+                style: TextStyle(
+                  fontFamily: TerminalTheme.monoFamily,
+                  color: TerminalTheme.fgOf(context),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12.5,
+                  letterSpacing: 0.3,
                 ),
               ),
-            ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -118,7 +139,7 @@ class _SpinningIconState extends State<_SpinningIcon>
   Widget build(BuildContext context) {
     return RotationTransition(
       turns: _ctrl,
-      child: Icon(widget.icon, color: Colors.white, size: 16),
+      child: Icon(widget.icon, size: 14, color: TerminalTheme.mutedOf(context)),
     );
   }
 }

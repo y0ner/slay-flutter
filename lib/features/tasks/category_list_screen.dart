@@ -1,3 +1,7 @@
+// `show` para no colisionar con la anotación `Category` de foundation
+// (nuestro modelo de datos también se llama Category).
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -99,11 +103,6 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
     return true;
   }
 
-  static Color _parseColor(String h) {
-    final v = int.parse(h.replaceFirst('#', '0xFF'));
-    return Color(v);
-  }
-
   // ─── Build ─────────────────────────────────────────────────
 
   @override
@@ -155,7 +154,13 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
               },
               child: _editMode
                   ? _buildReorderList(context)
-                  : _BrowseGrid(list: displayList),
+                  // Desktop (Linux): el grid 2-col hace las cards
+                  // gigantes en pantallas anchas — mostramos filas
+                  // compactas, igual al modo edición. Android conserva
+                  // el grid táctil.
+                  : defaultTargetPlatform == TargetPlatform.linux
+                      ? _BrowseRowList(list: displayList)
+                      : _BrowseGrid(list: displayList),
             )
           : asyncCats.when(
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -245,6 +250,12 @@ class _CategoryListScreenState extends ConsumerState<CategoryListScreen> {
 // ═══════════════════════════════════════════════════════════════
 // Widgets internos
 // ═══════════════════════════════════════════════════════════════
+
+/// Parsea un color hex tipo '#RRGGBB' (formato guardado en la DB).
+Color _parseColor(String h) {
+  final v = int.parse(h.replaceFirst('#', '0xFF'));
+  return Color(v);
+}
 
 /// Tile compacto para el modo reorder: icono de carpeta, nombre,
 /// count, y drag handle (≡) a la derecha.
@@ -336,6 +347,83 @@ class _BrowseGrid extends ConsumerWidget {
           category: c,
           onTap: () => context.push('/tasks/${c.id}'),
           onLongPress: () => _showEdit(context, ref, c),
+        );
+      },
+    );
+  }
+
+  void _showEdit(BuildContext context, WidgetRef ref, Category c) {
+    showDialog(
+      context: context,
+      builder: (_) => CategoryEditorDialog(
+        existing: c,
+        onDelete: () => ref.read(categoryRepositoryProvider).delete(c.id),
+      ),
+    );
+  }
+}
+
+/// Lista de filas compactas (desktop/Linux): mismo estilo que el
+/// modo edición (_ReorderTile) pero sin drag handle — tap para entrar
+/// a la categoría, long-press para editar.
+class _BrowseRowList extends ConsumerWidget {
+  const _BrowseRowList({required this.list});
+  final List<Category> list;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+      itemCount: list.length,
+      itemBuilder: (context, i) {
+        final c = list[i];
+        return Padding(
+          key: ValueKey(c.id),
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Material(
+            color: TerminalTheme.panelOf(context),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.zero,
+              side: BorderSide(color: TerminalTheme.lineOf(context)),
+            ),
+            child: InkWell(
+              onTap: () => context.push('/tasks/${c.id}'),
+              onLongPress: () => _showEdit(context, ref, c),
+              child: ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                // Marcador cuadrado del color de la categoría, como en
+                // el grid y en el modo edición.
+                leading: Container(
+                  width: 14,
+                  height: 14,
+                  color: _parseColor(c.color),
+                ),
+                title: Text(
+                  c.name,
+                  style: TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
+                    fontWeight: FontWeight.w700,
+                    color: TerminalTheme.fgOf(context),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  '${c.taskCount} tareas',
+                  style: TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
+                    fontSize: 12,
+                    color: TerminalTheme.mutedOf(context),
+                  ),
+                ),
+                trailing: Icon(
+                  Icons.chevron_right,
+                  color: TerminalTheme.mutedOf(context),
+                ),
+              ),
+            ),
+          ),
         );
       },
     );

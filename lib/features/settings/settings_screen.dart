@@ -81,12 +81,6 @@ class SettingsScreen extends ConsumerWidget {
                   color: TerminalTheme.mutedOf(context))),
         ),
         ListTile(
-          leading: const Icon(Icons.category_outlined),
-          title: const Text('Gestionar categorías'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.push('/settings/categories'),
-        ),
-        ListTile(
           leading: const Icon(Icons.check_circle_outline),
           title: const Text('Tareas completadas'),
           trailing: const Icon(Icons.chevron_right),

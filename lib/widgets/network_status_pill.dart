@@ -77,8 +77,8 @@ class NetworkStatusPill extends ConsumerWidget {
         child: Container(
           width: double.infinity,
           // Panel de la casa con borde inferior de 1px: banda plana,
-          // sin relleno de color ni sombras.
-          color: TerminalTheme.panelOf(context),
+          // sin relleno de color ni sombras. El color va dentro del
+          // BoxDecoration (Container no acepta color + decoration).
           padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 16),
           decoration: BoxDecoration(
             color: TerminalTheme.panelOf(context),

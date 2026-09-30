@@ -14,7 +14,7 @@ import '../tasks/category_editor_dialog.dart';
 /// es la pantalla actual (gestionada por GoRouter).
 ///
 /// Feature #10: el FAB del shell es **contextual** según la ruta:
-/// - `/`             → Nueva tarea (pre-carga reminder = hoy)
+/// - `/`             → Nueva tarea (marcada para hoy, sin reminder default)
 /// - `/calendar`     → Nueva tarea (mismo diálogo, sin reminder default)
 /// - `/tasks`        → Nueva categoría
 /// - `/tasks/:id`    → Nueva tarea en esa categoría
@@ -90,8 +90,11 @@ class HomeShell extends ConsumerWidget {
       return _FabSpec(
         icon: Icons.add,
         tooltip: 'Nueva tarea',
+        // markForToday: la tarea aparece en Mi Día vía `date`.
+        // reminderToday: false — sin recordatorio por default (el
+        // usuario lo agrega explícito con "Elegir" si lo quiere).
         onPressed: () => _quickAddTask(ctx,
-            reminderToday: true, markForToday: true),
+            reminderToday: false, markForToday: true),
       );
     }
     if (currentLocation == '/calendar') {

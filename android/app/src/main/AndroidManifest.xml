@@ -5,6 +5,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <!-- Para recordatorios/notificaciones locales: -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- device_calendar: sin estas permisiones declaradas, requestPermissions()
+         devuelve denegado INMEDIATAMENTE y sin mostrar diálogo al usuario. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR"/>
+    <uses-permission android:name="android.permission.WRITE_CALENDAR"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>

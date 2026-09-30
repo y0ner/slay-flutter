@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -89,9 +91,16 @@ class SettingsScreen extends ConsumerWidget {
         const Divider(),
 
         // ── Calendario & Recordatorios ───────────────────
-        const _CalendarSyncSection(),
+        // device_calendar sólo tiene implementación en Android/iOS;
+        // en desktop la sección no funcionaría (permisos que nunca
+        // existen), así que la ocultamos.
+        if (!kIsWeb &&
+            (defaultTargetPlatform == TargetPlatform.android ||
+                defaultTargetPlatform == TargetPlatform.iOS)) ...[
+          const _CalendarSyncSection(),
 
-        const Divider(),
+          const Divider(),
+        ],
 
         // ── Información ──────────────────────────────────
         Padding(
@@ -248,25 +257,43 @@ class _CalendarSyncSectionState extends State<_CalendarSyncSection> {
   Future<void> _toggleSync(bool value) async {
     if (value) {
       setState(() => _loading = true);
+      // 1) Permiso de calendario en runtime. En Android el plugin no
+      // dispara el diálogo del SO si el manifest no declara
+      // READ/WRITE_CALENDAR — en ese caso aparece "denegado para
+      // siempre" y hay que mandar al usuario a Ajustes del sistema.
       final granted = await CalendarService.instance.requestPermissions();
       if (!granted) {
-        if (mounted) {
-          setState(() => _loading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Se necesita permiso de calendario para sincronizar con Google Calendar.'),
-            ),
-          );
-        }
+        if (!mounted) return;
+        setState(() => _loading = false);
+        // El plugin no distingue "denegado una vez" de "denegado para
+        // siempre", así que damos la ruta manual en ambos casos.
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Se necesita el permiso de calendario. Concedelo en Ajustes del sistema → Apps → Slay → Permisos y volvé a intentar.'),
+            duration: Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
+      // 2) Buscar calendario automáticamente. Si no hay ninguno
+      // editable, avisar en vez de activar a ciegas.
+      final calendar = await CalendarService.instance.getActiveCalendar();
+      if (calendar == null) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se encontró un calendario editable en el dispositivo. Creá una cuenta de calendario (ej. Google) e intentá de nuevo.'),
+            duration: Duration(seconds: 4),
+          ),
+        );
         return;
       }
       await CalendarService.instance.setSyncEnabled(true);
-      // Buscar calendario automáticamente
-      final calendar = await CalendarService.instance.getActiveCalendar();
       if (mounted) {
         setState(() {
           _syncEnabled = true;
-          _calendarName = calendar?.name;
+          _calendarName = calendar.name;
           _loading = false;
         });
       }

@@ -182,10 +182,13 @@ class TaskListScreen extends ConsumerWidget {
                           onTap: () =>
                               context.push('/subtasks/${list[i].id}'),
                           onToggle: () async {
+                            // Completa → al fondo; descompleta → al final
+                            // del bloque pendiente. Lista global como base.
                             await ref
                                 .read(taskRepositoryProvider)
-                                .toggleComplete(
-                                    list[i].id, !list[i].isCompleted);
+                                .toggleWithReorder(
+                                    list[i].id, !list[i].isCompleted,
+                                    allTasks ?? const <Task>[]);
                             ref.invalidate(tasksStreamProvider);
                           },
                           onEdit: () => showDialog(

@@ -46,6 +46,11 @@ class MyDayScreen extends ConsumerWidget {
     }
 
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    // Lista GLOBAL (todas las tareas del usuario): es la base para
+    // calcular "al fondo" al completar (checkWithReorder), aunque la
+    // UI sólo muestre las de hoy.
+    final fullList = allTasks
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     final todayTasks = allTasks.where((t) {
       if (t.reminder != null) {
         return DateFormat('yyyy-MM-dd').format(t.reminder!) == today;
@@ -56,8 +61,8 @@ class MyDayScreen extends ConsumerWidget {
       return false;
     }).toList()
       // Igual que TaskListScreen: ordenamos SOLO por sortOrder. Las
-      // completadas conservan su posición (con line-through) — el
-      // orden que eligió el usuario es sagrado.
+      // completadas quedan al fondo por su sortOrder (cede su puesto
+      // al chuletear), no por un comparador que las esconda.
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
     final pending = todayTasks.where((t) => !t.isCompleted).length;
@@ -105,8 +110,9 @@ class MyDayScreen extends ConsumerWidget {
               reorderIndex: i,
               onTap: () => context.push('/subtasks/${t.id}'),
               onToggle: () async {
-                await ref.read(taskRepositoryProvider).toggleComplete(
-                    t.id, !t.isCompleted);
+                await ref
+                    .read(taskRepositoryProvider)
+                    .toggleWithReorder(t.id, !t.isCompleted, fullList);
                 ref.invalidate(tasksStreamProvider);
               },
               onEdit: () => showDialog(
@@ -189,9 +195,9 @@ class MyDayScreen extends ConsumerWidget {
   /// 2. Persiste en Supabase en paralelo.
   /// 3. Si falla, re-render desde el stream para revertir + snackbar.
   ///
-  /// Reutiliza la misma renumeración 0..N-1 que el repository hace
-  /// en `reorder()` — el `sortOrder` de cada Task queda igual a su
-  /// índice en la lista reordenada.
+  /// Renumeramos 0..N-1 sobre la lista VISIBLE (tareas de hoy) y
+  /// persistimos con `reorder`. Las tareas fuera de "hoy" no se
+  /// tocan, así el orden global no se pisa con el de Mi Día.
   Future<void> _onReorder(
     WidgetRef ref,
     List<Task> list,
@@ -209,7 +215,9 @@ class MyDayScreen extends ConsumerWidget {
     final reordered = [...list];
     final moved = reordered.removeAt(oldIndex);
     reordered.insert(target, moved);
-    // Renumeramos 0..N-1 → el sortOrder nuevo de cada Task.
+    // Renumeramos la lista visible 0..N-1 (compacta: quedan sin
+    // huecos tras mover una tarea al fondo). El resto del universo
+    // (otras categorías/fechas) conserva su sortOrder.
     final renumbered = [
       for (var i = 0; i < reordered.length; i++)
         reordered[i].copyWith(sortOrder: i),

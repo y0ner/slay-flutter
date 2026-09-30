@@ -209,7 +209,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                               onToggle: () async {
                                 await ref
                                     .read(taskRepositoryProvider)
-                                    .toggleComplete(t.id, !t.isCompleted);
+                                    .toggleWithReorder(
+                                        t.id, !t.isCompleted, all);
                                 ref.invalidate(tasksStreamProvider);
                               },
                               onEdit: () => showDialog(

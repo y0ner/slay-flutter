@@ -74,7 +74,8 @@ class CompletedTasksScreen extends ConsumerWidget {
                     .firstOrNull;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: _CompletedTaskTile(task: t, category: cat),
+                  child: _CompletedTaskTile(
+                      task: t, category: cat, allTasks: allTasks),
                 );
               },
             ),
@@ -83,10 +84,18 @@ class CompletedTasksScreen extends ConsumerWidget {
 }
 
 class _CompletedTaskTile extends ConsumerWidget {
-  const _CompletedTaskTile({required this.task, required this.category});
+  const _CompletedTaskTile({
+    required this.task,
+    required this.category,
+    required this.allTasks,
+  });
 
   final Task task;
   final Category? category;
+
+  /// Lista global (todas las tareas): base para recalcular la
+  /// posición al reactivar.
+  final List<Task> allTasks;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -142,7 +151,11 @@ class _CompletedTaskTile extends ConsumerWidget {
   Future<void> _handle(BuildContext context, WidgetRef ref, _Action a) async {
     switch (a) {
       case _Action.reactivate:
-        await ref.read(taskRepositoryProvider).toggleComplete(task.id, false);
+        // Reactivar Y devolver al final del bloque pendiente (misma
+        // política que descompletar en Mi Día / Tareas).
+        await ref.read(taskRepositoryProvider).uncheckWithReorder(
+            task.id, allTasks);
+        ref.invalidate(tasksStreamProvider);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(

@@ -561,7 +561,11 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
 
     if (!mounted) return;
     if (choice == _PostWorkChoice.complete) {
-      await ref.read(taskRepositoryProvider).toggleComplete(task.id, true);
+      // Completa Y mueve al fondo (misma política que Mi Día / Tareas).
+      final all = await ref.read(taskRepositoryProvider).getAll();
+      await ref
+          .read(taskRepositoryProvider)
+          .toggleWithReorder(task.id, true, all);
       ref.invalidate(tasksStreamProvider);
     } else if (choice == _PostWorkChoice.skipBreak) {
       // Paquete C: saltar el break y arrancar la próxima sesión de

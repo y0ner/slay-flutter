@@ -252,6 +252,81 @@ class TaskRepository {
     }
   }
 
+  /// Wrapper único para la UI: (des)completa aplicando la política de
+  /// auto-movimiento correspondiente.
+  ///
+  /// - complete=true  → la tarea va al fondo (ver [sortOrderAfterCheck]).
+  /// - complete=false → vuelve al final del bloque pendiente
+  ///   (ver [sortOrderAfterUncheck]).
+  ///
+  /// [allTasks] debe ser la lista GLOBAL del usuario (ver funciones
+  /// puras más abajo). Si la lista viene vacía (stream no cargado)
+  /// igual (des)completa, sólo no mueve.
+  Future<void> toggleWithReorder(
+      String taskId, bool complete, List<Task> allTasks) async {
+    if (complete) {
+      await checkWithReorder(taskId, allTasks);
+    } else {
+      await uncheckWithReorder(taskId, allTasks);
+    }
+  }
+
+  /// Actualiza sólo el `sort_order` de una tarea (con soporte offline).
+  Future<void> _updateSortOrder(String taskId, int sortOrder) async {
+    try {
+      await _client
+          .from('tasks')
+          .update({'sort_order': sortOrder}).eq('id', taskId);
+    } catch (e) {
+      if (_isNetwork(e)) {
+        await syncService?.enqueue(
+          op: 'update',
+          tableName: 'tasks',
+          payload: {'id': taskId, 'sort_order': sortOrder},
+        );
+        return;
+      }
+      rethrow;
+    }
+  }
+
+  /// Completa [taskId] Y la mueve al final del orden (sortOrder = máximo
+  /// de [allTasks] + 1).
+  ///
+  /// Por qué: con listas largas (100+ tareas), si las completadas
+  /// conservan su posición el usuario tiene que deslizar mucho para
+  /// encontrar lo que falta. Al chuletear, la tarea cede su puesto y
+  /// lo pendiente queda siempre arriba.
+  ///
+  /// Devuelve true si además de completar se movió.
+  Future<bool> checkWithReorder(String taskId, List<Task> allTasks) async {
+    await toggleComplete(taskId, true);
+    final matches = allTasks.where((t) => t.id == taskId);
+    if (matches.isEmpty) return false;
+    final target = sortOrderAfterCheck(allTasks, matches.first);
+    if (target == null) return false; // ya era la última: nada que mover
+    await _updateSortOrder(taskId, target);
+    return true;
+  }
+
+  /// Descompleta [taskId] Y la devuelve al final del bloque de tareas
+  /// pendientes (con el sortOrder de la última pendiente), para que no
+  /// quede perdida entre las completadas del fondo.
+  ///
+  /// Si la tarea ya estaba dentro del bloque de pendientes NO se
+  /// mueve: se respeta la posición que le dio el usuario con drag.
+  ///
+  /// Devuelve true si además de descompletar se movió.
+  Future<bool> uncheckWithReorder(String taskId, List<Task> allTasks) async {
+    await toggleComplete(taskId, false);
+    final matches = allTasks.where((t) => t.id == taskId);
+    if (matches.isEmpty) return false;
+    final target = sortOrderAfterUncheck(allTasks, matches.first);
+    if (target == null) return false; // ya está entre pendientes
+    await _updateSortOrder(taskId, target);
+    return true;
+  }
+
   /// Edita título y recordatorio.
   Future<void> update(String taskId, {String? title, DateTime? reminder}) async {
     final patch = <String, dynamic>{};
@@ -403,6 +478,41 @@ class TaskRepository {
   // ── Helpers ───────────────────────────────────────────────
 
   bool _isNetwork(Object e) => SyncService.isNetworkError(e);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Política de orden al (des)completar — funciones puras, testeables
+// sin Supabase.
+// ═══════════════════════════════════════════════════════════════
+
+/// Posición (sortOrder) que debe recibir [task] al ser COMPLETADA:
+/// al fondo de todo (máximo + 1). Devuelve null si ya está al fondo
+/// (nada que mover).
+///
+/// [allTasks] debe ser la lista GLOBAL del usuario (todas las
+/// categorías), no un subconjunto filtrado — así "al fondo" es
+/// realmente el fondo y no chocamos con tareas fuera del filtro.
+int? sortOrderAfterCheck(List<Task> allTasks, Task task) {
+  final maxSort =
+      allTasks.fold<int>(0, (m, t) => t.sortOrder > m ? t.sortOrder : m);
+  if (task.sortOrder >= maxSort) return null;
+  return maxSort + 1;
+}
+
+/// Posición (sortOrder) que debe recibir [task] al DESCOMPLETAR:
+/// la de la última tarea pendiente (queda al final del bloque
+/// pendiente). Devuelve null si no hay pendientes o si la tarea ya
+/// está dentro del bloque pendiente (su sortOrder no supera el
+/// anchor), respetando el orden que dio el usuario con drag.
+int? sortOrderAfterUncheck(List<Task> allTasks, Task task) {
+  final pending = allTasks
+      .where((t) => !t.isCompleted && t.id != task.id)
+      .toList()
+    ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+  if (pending.isEmpty) return null;
+  final anchor = pending.last.sortOrder;
+  if (task.sortOrder <= anchor) return null;
+  return anchor;
 }
 
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {

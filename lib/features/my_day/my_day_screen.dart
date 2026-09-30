@@ -49,8 +49,12 @@ class MyDayScreen extends ConsumerWidget {
     // Lista GLOBAL (todas las tareas del usuario): es la base para
     // calcular "al fondo" al completar (checkWithReorder), aunque la
     // UI sólo muestre las de hoy.
-    final fullList = allTasks
-      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    // Spread antes de sort: `allTasks` puede ser la const vacía del
+    // primer frame (stream cargando) y `List.sort()` muta in-place →
+    // "Cannot modify an unmodifiable list" = pantalla roja 1 frame.
+    final fullList = [
+      ...allTasks,
+    ]..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     final todayTasks = allTasks.where((t) {
       if (t.reminder != null) {
         return DateFormat('yyyy-MM-dd').format(t.reminder!) == today;

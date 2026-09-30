@@ -374,21 +374,21 @@ class TaskRepository {
   /// Optimistic UI: invalida `tasksStreamProvider` para que la UI
   /// re-emita con el nuevo orden. Si Supabase rechaza, la excepción
   /// se propaga y la UI debería revertir + mostrar snackbar.
+  ///
+  /// NOTA: los callers pasan la lista YA renumerada
+  /// (`copyWith(sortOrder: i)`), así que NO se puede "saltear" updates
+  /// comparando `task.sortOrder == i` — esa comparación es siempre
+  /// verdadera por construcción y volvía al método entero un no-op:
+  /// el drag no persistía nada y al recargar el stream las tareas
+  /// volvían a su orden original.
   Future<void> reorder(List<Task> ordered) async {
     if (ordered.isEmpty) return;
-    final updates = <Future<void>>[];
-    for (var i = 0; i < ordered.length; i++) {
-      final task = ordered[i];
-      // Saltamos updates redundantes (sortOrder ya coincide).
-      if (task.sortOrder == i) continue;
-      updates.add(
+    await Future.wait([
+      for (var i = 0; i < ordered.length; i++)
         _client
             .from('tasks')
-            .update({'sort_order': i}).eq('id', task.id),
-      );
-    }
-    if (updates.isEmpty) return;
-    await Future.wait(updates, eagerError: false);
+            .update({'sort_order': i}).eq('id', ordered[i].id),
+    ]);
   }
 
   // ── Subtasks ──────────────────────────────────────────────

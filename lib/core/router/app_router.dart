@@ -86,7 +86,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/pomodoro',
-            pageBuilder: (_, __) => const NoTransitionPage(child: PomodoroScreen()),
+            // El preselect de "Enviar a foco" (⏱) NO viaja por query
+            // params: viaja por `pendingFocusTaskProvider` — ver
+            // focus_controller.dart. Con query params el State de la
+            // pantalla y el ciclo de rebuild del shell se comían la
+            // señal silenciosamente en device.
+            builder: (_, __) => const PomodoroScreen(),
           ),
           GoRoute(
             path: '/calendar',

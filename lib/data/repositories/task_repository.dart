@@ -184,6 +184,34 @@ class TaskRepository {
     });
   }
 
+  /// Cache local de tareas (el mismo fallback que usa `watchTasks`
+  /// cuando falla la red). Offline-first: datos ya mismo, sin red.
+  Future<List<Task>> getCached() => _getCached();
+
+  /// Busca una tarea por id, offline-first: primero el cache local
+  /// (instantáneo, sin red) y si no está ahí, la red.
+  ///
+  /// NUNCA lanza: devuelve null si no la encuentra en ninguno de los
+  /// dos. La usa el preselect de "Enviar a foco": antes iba con
+  /// `getAll()` (red directa) y un fallo de Supabase (PGRST303 al
+  /// arrancar, sin conexión, proyecto pausado) moría en silencio y
+  /// dejaba la pantalla de Foco en "elegir tarea" sin preseleccionar.
+  Future<Task?> getById(String id) async {
+    final cached = await _getCached();
+    for (final t in cached) {
+      if (t.id == id) return t;
+    }
+    try {
+      final all = await getAll();
+      for (final t in all) {
+        if (t.id == id) return t;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Crea una tarea. Devuelve la fila insertada.
   /// Si falla por red y `syncService` está disponible, encola la op
   /// y devuelve un Task local con `isLocal = true` para feedback

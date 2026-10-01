@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../core/theme/terminal_theme.dart';
-import '../data/local/pomodoro_stats.dart';
+import '../features/pomodoro/focus_history.dart';
 import '../data/models/category.dart';
 import '../data/models/task.dart';
 
@@ -86,16 +86,20 @@ class _TaskCardState extends ConsumerState<TaskCard> {
     final subtle = Theme.of(context).colorScheme.onSurfaceVariant;
     final dateChipColor = Theme.of(context).colorScheme.surface;
 
-    // Pomodoros invertidos en esta tarea (sólo si > 0, sino ni se muestra).
-    final pomodoroCount = ref.watch(pomodoroStatsProvider
-        .select((s) => s.perTask[task.id] ?? 0));
-    // Tiempo total invertido (en minutos) usando el preset estándar
-    // como aproximación. El caller puede refinar si quiere exactitud
-    // por preset persistido por sesión (futuro enhancement).
-    final totalMinutes = pomodoroCount * 25;
+    // Tiempo REAL trabajado en esta tarea (pomodoro v2: historial de
+    // sesiones de foco, sin descansos). Sólo se muestra si > 0.
+    final totalMinutes = ref
+        .watch(focusHistoryProvider)
+        .where((e) => e.taskId == task.id)
+        .fold<int>(0, (m, e) => m + e.workedSeconds) ~/ 60;
+    final pomodoroCount = totalMinutes > 0 ? 1 : 0;
     // Última sesión (hace cuánto se trabajó en esta tarea).
-    final lastSession = ref.watch(pomodoroStatsProvider
-        .select((s) => s.perTaskHistory[task.id]?.lastOrNull));
+    DateTime? lastSession;
+    for (final e in ref.watch(focusHistoryProvider)) {
+      if (e.taskId != task.id) continue;
+      final d = DateTime.fromMillisecondsSinceEpoch(e.startedAtMs);
+      if (lastSession == null || d.isAfter(lastSession)) lastSession = d;
+    }
 
     return Dismissible(
       key: ValueKey('task-${task.id}'),
@@ -214,8 +218,6 @@ class _TaskCardState extends ConsumerState<TaskCard> {
                                 if (cat != null)
                                   _CategoryChip(name: cat.name, color: catColor),
                                 _DateChip(task: task, bg: dateChipColor, color: subtle),
-                                if (pomodoroCount > 0)
-                                  _PomodoroChip(count: pomodoroCount),
                               ],
                             ),
                           ),
@@ -285,38 +287,6 @@ class _TaskCardState extends ConsumerState<TaskCard> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _PomodoroChip extends StatelessWidget {
-  const _PomodoroChip({required this.count});
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    const tomato = TerminalTheme.dayHeart;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        border: Border.all(color: tomato.withValues(alpha: 0.45)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text('🍅', style: TextStyle(fontSize: 11)),
-          const SizedBox(width: 3),
-          Text(
-            '$count',
-            style: const TextStyle(
-              fontFamily: TerminalTheme.monoFamily,
-              fontSize: 11,
-              color: tomato,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
       ),
     );
   }

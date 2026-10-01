@@ -271,17 +271,33 @@ class FocusRunNotifier extends Notifier<FocusRunState?> {
     await _persist();
   }
 
-  /// Wrap-up: "no terminé" → extender SOLO el tiempo total. Los
-  /// intervalos y el descanso se mantienen. Arranca un run nuevo
-  /// (historial nuevo) con el extra como total.
-  Future<void> extendAndRestart({required int extraMinutes}) async {
+  /// Wrap-up: "no terminé" → trabajo NUEVO de [extraMinutes] (lo ya
+  /// trabajado NO se repite — antes se sumaba al total y re-hacía la
+  /// tarea entera). El tamaño de intervalo se mantiene; el extra se
+  /// divide en ese tamaño. [wantsBreaks] decide si el run nuevo lleva
+  /// descansos (con el mismo descanso elegido al inicio).
+  ///
+  /// Ej: intervalos de 12 min + extra 1 min sin descansos → 1 sesión
+  /// de 1 min. Con descansos y extra 25 → ceil(25/12)=3 intervalos
+  /// (12+12+1) con descansos entre ellos.
+  Future<void> extendAndRestart({
+    required int extraMinutes,
+    required bool wantsBreaks,
+  }) async {
     final s = state;
     if (s == null) return;
+    final perInterval = s.config.workMinutesPerInterval.clamp(1, 1 << 31);
+    final intervalCount = wantsBreaks
+        ? (extraMinutes / perInterval).ceil().clamp(1, 1 << 31)
+        : 1;
     await start(
       taskId: s.taskId,
       taskTitle: s.taskTitle,
-      config: s.config.copyWith(
-          totalMinutes: s.config.totalMinutes + extraMinutes),
+      config: FocusConfig(
+        totalMinutes: extraMinutes,
+        intervalCount: intervalCount,
+        breakMinutes: wantsBreaks ? s.config.breakMinutes : 0,
+      ),
     );
   }
 

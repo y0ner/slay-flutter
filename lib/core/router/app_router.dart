@@ -86,7 +86,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/pomodoro',
-            pageBuilder: (_, __) => const NoTransitionPage(child: PomodoroScreen()),
+            // `?task=<id>` pre-selecciona la tarea y abre directo el
+            // wizard (el usuario sólo configura tiempo/intervalos).
+            builder: (_, state) => PomodoroScreen(
+              preselectTaskId: state.uri.queryParameters['task'],
+            ),
           ),
           GoRoute(
             path: '/calendar',

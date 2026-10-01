@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/theme/terminal_theme.dart';
 import '../../data/models/category.dart' show Category;
+import '../../widgets/square_progress_border.dart';
 import '../../data/models/task.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/task_repository.dart';
@@ -28,7 +28,11 @@ import 'focus_model.dart';
 /// 5. Detener mid-run → vuelve al wizard (todo se reconfigura), el
 ///    tiempo trabajado queda en el historial.
 class PomodoroScreen extends ConsumerStatefulWidget {
-  const PomodoroScreen({super.key});
+  const PomodoroScreen({super.key, this.preselectTaskId});
+
+  /// Id de tarea a pre-seleccionar ("Enviar a foco" desde una
+  /// tarjeta): abre directo el wizard con la tarea ya elegida.
+  final String? preselectTaskId;
 
   @override
   ConsumerState<PomodoroScreen> createState() => _PomodoroScreenState();
@@ -61,11 +65,11 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
         setState(() => _stage = _PomoStage.running);
         return;
       }
-      // "Enviar a foco" desde una tarjeta de tarea.
-      final queryTaskId =
-          GoRouterState.of(context).uri.queryParameters['task'];
-      if (queryTaskId != null && queryTaskId.isNotEmpty) {
-        _openPicker(preselectId: queryTaskId);
+      // "Enviar a foco" desde una tarjeta → wizard directo con la
+      // tarea ya elegida (sin pasar por la lista).
+      final pre = widget.preselectTaskId;
+      if (pre != null && pre.isNotEmpty) {
+        _pickTaskById(pre);
       }
     });
   }
@@ -78,7 +82,22 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
 
   // ── Acciones ──────────────────────────────────────────────
 
-  Future<void> _openPicker({String? preselectId}) async {
+  /// Carga la tarea [taskId] del repo y salta directo al wizard.
+  Future<void> _pickTaskById(String taskId) async {
+    final all = await ref.read(taskRepositoryProvider).getAll();
+    if (!mounted) return;
+    final match = all.where((t) => t.id == taskId).firstOrNull;
+    if (match == null || match.isCompleted) {
+      _openPicker();
+      return;
+    }
+    setState(() {
+      _pickedTask = match;
+      _stage = _PomoStage.wizard;
+    });
+  }
+
+  Future<void> _openPicker() async {
     final tasks = await ref.read(taskRepositoryProvider).getAll();
     final categories = await ref.read(categoryRepositoryProvider).getAll();
     if (!mounted) return;
@@ -91,7 +110,6 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
       builder: (_) => _TaskPickerSheet(
         tasks: pending,
         categories: categories,
-        preselectId: preselectId,
       ),
     );
     if (picked == null || !mounted) return;
@@ -475,81 +493,74 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Anillo.
+          // Progreso: borde CUADRADO que se dibuja alrededor del
+          // cuadro del tiempo (el círculo no iba con la app).
+          // El tamaño total sale del hijo (232) + padding del borde;
+          // se limita con FittedBox para no desbordar en pantallas
+          // chicas (el Expanded absorbe el resto del alto).
           Expanded(
             child: Center(
-              child: SizedBox(
-                width: 260,
-                height: 260,
-                child: Stack(
+              child: FittedBox(
+                child: SquareProgressBorder(
+                  progress: progress.clamp(0.0, 1.0),
+                  color: accent,
+                  trackColor: TerminalTheme.lineOf(context),
+                  strokeWidth: 6,
+                  padding: 24,
+                  child: Container(
+                    width: 232,
+                    height: 232,
+                  decoration: BoxDecoration(
+                    color: TerminalTheme.panelOf(context),
+                    border: Border.all(color: TerminalTheme.lineOf(context)),
+                  ),
                   alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: 260,
-                      height: 260,
-                      child: CircularProgressIndicator(
-                        value: progress.clamp(0.0, 1.0),
-                        strokeWidth: 12,
-                        strokeCap: StrokeCap.square,
-                        backgroundColor: TerminalTheme.lineOf(context),
-                        valueColor: AlwaysStoppedAnimation(accent),
-                      ),
-                    ),
-                    Container(
-                      width: 212,
-                      height: 212,
-                      decoration: BoxDecoration(
-                        color: TerminalTheme.panelOf(context),
-                        border: Border.all(color: TerminalTheme.lineOf(context)),
-                      ),
-                      alignment: Alignment.center,
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(width: 7, height: 7, color: accent),
-                              const SizedBox(width: 7),
-                              Text(
-                                phaseLabel,
-                                style: TextStyle(
-                                  fontFamily: TerminalTheme.monoFamily,
-                                  fontSize: 11.5,
-                                  letterSpacing: 1.2,
-                                  color: accent,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
+                          Container(width: 7, height: 7, color: accent),
+                          const SizedBox(width: 7),
                           Text(
-                            _fmt(s.remainingSeconds),
-                            style: TextStyle(
-                              fontFamily: TerminalTheme.pixelFamily,
-                              fontSize: 44,
-                              height: 1.1,
-                              color: TerminalTheme.fgOf(context),
-                              fontFeatures: [FontFeature.tabularFigures()],
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            s.running
-                                ? 'corriendo'
-                                : 'en pausa — ${_fmt(s.remainingSeconds)} restantes',
+                            phaseLabel,
                             style: TextStyle(
                               fontFamily: TerminalTheme.monoFamily,
                               fontSize: 11.5,
-                              color: TerminalTheme.mutedOf(context),
+                              letterSpacing: 1.2,
+                              color: accent,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Text(
+                        _fmt(s.remainingSeconds),
+                        style: TextStyle(
+                          fontFamily: TerminalTheme.pixelFamily,
+                          fontSize: 44,
+                          height: 1.1,
+                          color: TerminalTheme.fgOf(context),
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        s.running
+                            ? 'corriendo'
+                            : 'en pausa — ${_fmt(s.remainingSeconds)} restantes',
+                        style: TextStyle(
+                          fontFamily: TerminalTheme.monoFamily,
+                          fontSize: 11.5,
+                          color: TerminalTheme.mutedOf(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 ),
               ),
             ),
@@ -682,31 +693,57 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
 
   Future<void> _askExtend(BuildContext context, FocusRunState s) async {
     final ctrl = TextEditingController(text: '15');
-    final extra = await showDialog<int>(
+    bool wantsBreaks = s.config.breakMinutes > 0;
+    final result = await showDialog<(int, bool)>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('¿Cuánto más creés que falta?'),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'minutos extra'),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(ctx, int.tryParse(ctrl.text) ?? 0),
-            child: const Text('Extender'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('¿Cuánto más te falta?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                  'Es tiempo NUEVO para terminar — lo ya trabajado no se repite.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'minutos extra'),
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  'Con descansos (${s.config.breakMinutes} min)',
+                  style: const TextStyle(fontSize: 14),
+                ),
+                value: wantsBreaks,
+                onChanged: s.config.breakMinutes > 0
+                    ? (v) => setDialogState(() => wantsBreaks = v)
+                    : null,
+              ),
+            ],
           ),
-        ],
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                  ctx, (int.tryParse(ctrl.text) ?? 0, wantsBreaks)),
+              child: const Text('Extender'),
+            ),
+          ],
+        ),
       ),
     );
-    if (extra == null || extra <= 0 || !mounted) return;
+    if (result == null || result.$1 <= 0 || !mounted) return;
     await ref.read(focusRunProvider.notifier).extendAndRestart(
-          extraMinutes: extra,
+          extraMinutes: result.$1,
+          wantsBreaks: result.$2,
         );
     if (mounted) setState(() => _stage = _PomoStage.running);
   }
@@ -941,11 +978,9 @@ class _TaskPickerSheet extends StatelessWidget {
   const _TaskPickerSheet({
     required this.tasks,
     required this.categories,
-    this.preselectId,
   });
   final List<Task> tasks;
   final List<Category> categories;
-  final String? preselectId;
 
   @override
   Widget build(BuildContext context) {
@@ -989,7 +1024,6 @@ class _TaskPickerSheet extends StatelessWidget {
                       itemBuilder: (context, i) {
                         final t = tasks[i];
                         final cat = catById[t.categoryId];
-                        final isPre = preselectId == t.id;
                         return ListTile(
                           leading: Container(
                             width: 14,
@@ -1004,8 +1038,6 @@ class _TaskPickerSheet extends StatelessWidget {
                             style: TextStyle(
                               fontFamily: TerminalTheme.monoFamily,
                               color: TerminalTheme.fgOf(context),
-                              fontWeight:
-                                  isPre ? FontWeight.w700 : FontWeight.w500,
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -1018,8 +1050,6 @@ class _TaskPickerSheet extends StatelessWidget {
                                     color: TerminalTheme.mutedOf(context),
                                   ))
                               : null,
-                          trailing:
-                              isPre ? Icon(Icons.check, color: accent) : null,
                           onTap: () => Navigator.pop(context, t),
                         );
                       },
@@ -1038,15 +1068,25 @@ class _TaskPickerSheet extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════
 
 void _openHistorySheet(BuildContext context, WidgetRef ref) {
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: TerminalTheme.panelOf(context),
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-    builder: (_) => const _HistorySheet(),
+  // PopupRoute (dialog a pantalla completa) y NO bottom sheet: los
+  // showModalBottomSheet viven en el Navigator raíz y SOBREVIVEN al
+  // cambio de tab de GoRouter (el usuario veía el registro flotando
+  // sobre Mi Día). Un PopupRoute se cierra con la navegación.
+  Navigator.of(context, rootNavigator: false).push(
+    PageRouteBuilder(
+      opaque: false,
+      barrierColor: Colors.black54,
+      pageBuilder: (_, __, ___) => const _HistorySheet(),
+      transitionsBuilder: (_, animation, __, child) =>
+          FadeTransition(opacity: animation, child: child),
+    ),
   );
 }
 
+/// Registro de foco AGRUPADO POR TAREA: una fila por tarea con el
+/// tiempo TOTAL trabajado (todos los intentos suman, incluidos los
+/// reconfigurados/detenidos). Tocar la fila abre el detalle con cada
+/// intento.
 class _HistorySheet extends ConsumerWidget {
   const _HistorySheet();
 
@@ -1054,80 +1094,299 @@ class _HistorySheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final sessions = ref.watch(focusHistoryProvider);
     final accent = TerminalTheme.accentOf(context);
-    final totalMin = sessions.fold<int>(0, (m, e) => m + e.workedSeconds) ~/ 60;
+
+    // Agrupar por tarea preservando orden (más reciente primero).
+    final groups = <String, List<FocusSessionEntry>>{};
+    for (final e in sessions) {
+      groups.putIfAbsent(e.taskId, () => []).add(e);
+    }
+    final totalMin =
+        sessions.fold<int>(0, (m, e) => m + e.workedSeconds) ~/ 60;
 
     return SafeArea(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.8,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 14),
-            Text(
-              '> REGISTRO DE FOCO',
-              style: TextStyle(
-                fontFamily: TerminalTheme.monoFamily,
-                fontSize: 12,
-                letterSpacing: 1.2,
-                fontWeight: FontWeight.w700,
-                color: accent,
-              ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 560,
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
+          ),
+          child: Container(
+            margin: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: TerminalTheme.panelOf(context),
+              border: Border.all(color: TerminalTheme.lineOf(context)),
             ),
-            const SizedBox(height: 4),
-            Text(
-              '${sessions.length} sesiones · $totalMin min trabajados',
-              style: TextStyle(
-                fontFamily: TerminalTheme.monoFamily,
-                fontSize: 12,
-                color: TerminalTheme.mutedOf(context),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Flexible(
-              child: sessions.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        '> todavía no hay registros',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 8, 0),
+                  child: Row(
+                    children: [
+                      Text(
+                        '> REGISTRO DE FOCO',
                         style: TextStyle(
                           fontFamily: TerminalTheme.monoFamily,
-                          color: TerminalTheme.mutedOf(context),
+                          fontSize: 12,
+                          letterSpacing: 1.2,
+                          fontWeight: FontWeight.w700,
+                          color: accent,
                         ),
                       ),
-                    )
-                  : ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: sessions.length,
-                      itemBuilder: (context, i) {
-                        final e = sessions[i];
-                        return _HistoryTile(entry: e);
-                      },
+                      const Spacer(),
+                      IconButton(
+                        tooltip: 'Cerrar',
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close, size: 20),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    '${groups.length} tareas · $totalMin min trabajados',
+                    style: TextStyle(
+                      fontFamily: TerminalTheme.monoFamily,
+                      fontSize: 12,
+                      color: TerminalTheme.mutedOf(context),
                     ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Flexible(
+                  child: groups.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            '> todavía no hay registros',
+                            style: TextStyle(
+                              fontFamily: TerminalTheme.monoFamily,
+                              color: TerminalTheme.mutedOf(context),
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: groups.length,
+                          itemBuilder: (context, i) {
+                            final entries = groups.values.elementAt(i);
+                            return _HistoryGroupTile(entries: entries);
+                          },
+                        ),
+                ),
+                const SizedBox(height: 8),
+              ],
             ),
-            const SizedBox(height: 8),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _HistoryTile extends StatelessWidget {
-  const _HistoryTile({required this.entry});
-  final FocusSessionEntry entry;
+/// Fila agrupada de una tarea: total trabajado + estado global.
+class _HistoryGroupTile extends StatelessWidget {
+  const _HistoryGroupTile({required this.entries});
+  final List<FocusSessionEntry> entries;
 
   @override
   Widget build(BuildContext context) {
     final muted = TerminalTheme.mutedOf(context);
     final ok = TerminalTheme.okOf(context);
     final accent = TerminalTheme.accentOf(context);
+
+    // Entradas ya vienen más nuevas primero. La "terminada" define el
+    // estado del grupo; si hay un run en curso, ese manda.
+    final running = entries.where((e) => e.isRunning).firstOrNull;
+    final finished = entries.where((e) => e.completedTask).firstOrNull;
+    final totalSec = entries.fold<int>(0, (m, e) => m + e.workedSeconds);
+    final last = entries.first;
+
+    final statusLabel = running != null
+        ? 'en curso'
+        : finished != null
+            ? 'terminada'
+            : 'sin terminar';
+    final statusColor = running != null
+        ? accent
+        : finished != null
+            ? ok
+            : muted;
+
+    // Fecha a mostrar: el inicio del intento más reciente.
+    final started = DateTime.fromMillisecondsSinceEpoch(last.startedAtMs);
+    final dateLabel =
+        '${started.day}/${started.month} ${started.hour.toString().padLeft(2, '0')}:${started.minute.toString().padLeft(2, '0')}';
+
+    return InkWell(
+      onTap: () => _openDetailDialog(context, entries),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: TerminalTheme.lineOf(context)),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            Container(width: 7, height: 7, color: statusColor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    last.taskTitle,
+                    style: TextStyle(
+                      fontFamily: TerminalTheme.monoFamily,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: TerminalTheme.fgOf(context),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$dateLabel · total ${_fmtDuration(totalSec)} trabajados'
+                    ' · ${entries.length} intento${entries.length == 1 ? '' : 's'}'
+                    ' · $statusLabel',
+                    style: TextStyle(
+                      fontFamily: TerminalTheme.monoFamily,
+                      fontSize: 11.5,
+                      color: muted,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: muted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openDetailDialog(BuildContext context, List<FocusSessionEntry> entries) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (_) => _SessionDetailDialog(entries: entries),
+    );
+  }
+}
+
+/// Modal flotante con el detalle de todos los intentos de una tarea.
+class _SessionDetailDialog extends StatelessWidget {
+  const _SessionDetailDialog({required this.entries});
+
+  final List<FocusSessionEntry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = TerminalTheme.accentOf(context);
+    final muted = TerminalTheme.mutedOf(context);
+    final totalSec = entries.fold<int>(0, (m, e) => m + e.workedSeconds);
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Container(
+          decoration: BoxDecoration(
+            color: TerminalTheme.panelOf(context),
+            border: Border.all(color: TerminalTheme.lineOf(context)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entries.first.taskTitle,
+                        style: TextStyle(
+                          fontFamily: TerminalTheme.monoFamily,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          color: TerminalTheme.fgOf(context),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Cerrar',
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, size: 20),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  '> TOTAL: ${_fmtDuration(totalSec)} en ${entries.length} intento${entries.length == 1 ? '' : 's'}',
+                  style: TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (final e in entries) _AttemptTile(entry: e),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  'Toca fuera del recuadro para cerrar.',
+                  style: TextStyle(
+                    fontFamily: TerminalTheme.monoFamily,
+                    fontSize: 10.5,
+                    color: muted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Detalle de un intento individual.
+class _AttemptTile extends StatelessWidget {
+  const _AttemptTile({required this.entry});
+  final FocusSessionEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = TerminalTheme.mutedOf(context);
+    final accent = TerminalTheme.accentOf(context);
+    final ok = TerminalTheme.okOf(context);
+
     final started = DateTime.fromMillisecondsSinceEpoch(entry.startedAtMs);
     final dateLabel =
         '${started.day}/${started.month} ${started.hour.toString().padLeft(2, '0')}:${started.minute.toString().padLeft(2, '0')}';
     final statusLabel = switch (entry.status) {
-      'finished' => entry.completedTask ? 'terminada' : 'completa',
+      'finished' => entry.completedTask ? 'terminada ✓' : 'completa',
       'stopped' => 'detenida',
       'reconfigured' => 'reconfigurada',
       _ => 'en curso',
@@ -1139,48 +1398,41 @@ class _HistoryTile extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: TerminalTheme.lineOf(context)),
+          top: BorderSide(color: TerminalTheme.lineOf(context)),
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           Container(width: 7, height: 7, color: statusColor),
           const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.taskTitle,
-                  style: TextStyle(
-                    fontFamily: TerminalTheme.monoFamily,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    color: TerminalTheme.fgOf(context),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$dateLabel · ${entry.workedSeconds ~/ 60} min trabajados'
-                  ' · plan ${entry.plannedTotalMinutes} min en ${entry.intervalCount}'
-                  '${entry.pauseCount > 0 ? ' · ${entry.pauseCount} pausas' : ''}'
-                  ' · $statusLabel',
-                  style: TextStyle(
-                    fontFamily: TerminalTheme.monoFamily,
-                    fontSize: 11.5,
-                    color: muted,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+            child: Text(
+              '$dateLabel · ${_fmtDuration(entry.workedSeconds)}'
+              ' · plan ${entry.plannedTotalMinutes} min en ${entry.intervalCount}'
+              '${entry.breakMinutes > 0 ? ' + ${entry.breakMinutes} desc' : ''}'
+              '${entry.pauseCount > 0 ? ' · ${entry.pauseCount} pausa${entry.pauseCount == 1 ? '' : 's'}' : ''}'
+              ' · $statusLabel',
+              style: TextStyle(
+                fontFamily: TerminalTheme.monoFamily,
+                fontSize: 11.5,
+                color: muted,
+              ),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+/// Formato de duración legible: "1 h 05 min" / "12 min" / "45 seg".
+String _fmtDuration(int seconds) {
+  if (seconds < 60) return '$seconds seg';
+  final h = seconds ~/ 3600;
+  final m = (seconds % 3600) ~/ 60;
+  if (h > 0) {
+    return m > 0 ? '$h h ${m.toString().padLeft(2, '0')} min' : '$h h';
+  }
+  return '$m min';
 }

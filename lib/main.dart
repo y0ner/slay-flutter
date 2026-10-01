@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -83,6 +84,24 @@ Future<void> main() async {
   } catch (e) {
     debugPrint('main: init error: $e — continuando con runApp igual');
   }
+
+  // Pomodoro v2: configurar el foreground service. El servicio sólo
+  // se INICIA cuando arranca un run de foco (ver focus_controller).
+  FlutterForegroundTask.init(
+    androidNotificationOptions: AndroidNotificationOptions(
+      channelId: 'slay_focus_service',
+      channelName: 'Sesión de foco',
+      channelDescription: 'Mantiene el timer de Pomodoro vivo en segundo plano.',
+      priority: NotificationPriority.LOW,
+    ),
+    iosNotificationOptions: const IOSNotificationOptions(
+      showNotification: false,
+      playSound: false,
+    ),
+    foregroundTaskOptions: ForegroundTaskOptions(
+      eventAction: ForegroundTaskEventAction.once(),
+    ),
+  );
 
   runApp(const ProviderScope(child: SlayApp()));
 }

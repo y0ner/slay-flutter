@@ -141,6 +141,10 @@ class FocusRunNotifier extends Notifier<FocusRunState?> {
   Future<void> _startForegroundService(String taskTitle) async {
     if (!_canUseForegroundService) return;
     try {
+      // Android 13+: sin POST_NOTIFICATIONS la notificación del FGS no
+      // se ve. Pedirlo al iniciar el run (con contexto de uso) en vez
+      // de al abrir la app.
+      await LocalNotifications.instance.requestPermission();
       if (await FlutterForegroundTask.isRunningService) return;
       await FlutterForegroundTask.startService(
         notificationTitle: 'Sesión de foco',

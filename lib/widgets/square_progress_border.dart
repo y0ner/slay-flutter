@@ -97,40 +97,11 @@ class _SquareProgressPainter extends CustomPainter {
 
     if (progress <= 0) return;
 
-    final w = rect.width;
-    final h = rect.height;
-    final start = Offset(rect.left + w / 2, rect.top);
-
-    // Segmentos en sentido horario desde el medio del lado superior:
-    // medio-sup → sup-der → inf-der → inf-izq → sup-izq → medio-sup.
-    final segments = <_Seg>[
-      _Seg(Offset(rect.right, rect.top), w / 2),
-      _Seg(Offset(rect.right, rect.bottom), h),
-      _Seg(Offset(rect.left, rect.bottom), w),
-      _Seg(Offset(rect.left, rect.top), h),
-      _Seg(start, w / 2),
-    ];
-
-    final total = segments.fold<double>(0, (m, s) => m + s.length);
-    var remaining = progress.clamp(0.0, 1.0) * total;
-
-    final path = Path()..moveTo(start.dx, start.dy);
-    for (final seg in segments) {
-      if (remaining <= 0) break;
-      final from = pathLastOffset(path);
-      if (remaining >= seg.length) {
-        path.lineTo(seg.end.dx, seg.end.dy);
-        remaining -= seg.length;
-      } else {
-        final t = remaining / seg.length;
-        final partial = Offset(
-          from.dx + (seg.end.dx - from.dx) * t,
-          from.dy + (seg.end.dy - from.dy) * t,
-        );
-        path.lineTo(partial.dx, partial.dy);
-        remaining = 0;
-      }
-    }
+    final path = squareProgressPath(
+      progress: progress,
+      size: size,
+      strokeWidth: strokeWidth,
+    );
 
     final progressPaint = Paint()
       ..color = color
@@ -140,15 +111,6 @@ class _SquareProgressPainter extends CustomPainter {
     canvas.drawPath(path, progressPaint);
   }
 
-  /// `Path` no expone el último punto; como todos los segmentos son
-  /// lineTo encadenados desde `start`, lo reconstruimos acumulando.
-  static Offset pathLastOffset(Path path) {
-    final metrics = path.computeMetrics().toList();
-    if (metrics.isEmpty) return Offset.zero;
-    final m = metrics.last;
-    final contour = m.getTangentForOffset(m.length);
-    return contour?.position ?? Offset.zero;
-  }
 
   @override
   bool shouldRepaint(_SquareProgressPainter old) =>
@@ -156,4 +118,65 @@ class _SquareProgressPainter extends CustomPainter {
       old.color != color ||
       old.trackColor != trackColor ||
       old.strokeWidth != strokeWidth;
+}
+
+/// Construye el `Path` del progreso sobre un lienzo de [size].
+///
+/// Pública para que los tests validen la geometría. REGRESIÓN: antes
+/// el primer segmento parcial se dibujaba en DIAGONAL desde la esquina
+/// del lienzo ("la silueta anaranjada se sale de su lugar") porque el
+/// punto actual se pedía con `computeMetrics` sobre un path recién
+/// `moveTo` — un path sin `lineTo` no expone su punto inicial, y el
+/// fallback era `Offset.zero`. Acá el punto actual se lleva de forma
+/// explícita en el loop.
+Path squareProgressPath({
+  required double progress,
+  required Size size,
+  required double strokeWidth,
+}) {
+  final inset = strokeWidth / 2;
+  final rect = Rect.fromLTRB(
+    inset,
+    inset,
+    size.width - inset,
+    size.height - inset,
+  );
+
+  final w = rect.width;
+  final h = rect.height;
+  final start = Offset(rect.left + w / 2, rect.top);
+
+  // Segmentos en sentido horario desde el medio del lado superior:
+  // medio-sup → sup-der → inf-der → inf-izq → sup-izq → medio-sup.
+  final segments = <_Seg>[
+    _Seg(Offset(rect.right, rect.top), w / 2),
+    _Seg(Offset(rect.right, rect.bottom), h),
+    _Seg(Offset(rect.left, rect.bottom), w),
+    _Seg(Offset(rect.left, rect.top), h),
+    _Seg(start, w / 2),
+  ];
+
+  final total = segments.fold<double>(0, (m, s) => m + s.length);
+  var remaining = progress.clamp(0.0, 1.0) * total;
+
+  final path = Path()..moveTo(start.dx, start.dy);
+  var current = start;
+  for (final seg in segments) {
+    if (remaining <= 0) break;
+    if (remaining >= seg.length) {
+      path.lineTo(seg.end.dx, seg.end.dy);
+      current = seg.end;
+      remaining -= seg.length;
+    } else {
+      final t = remaining / seg.length;
+      final partial = Offset(
+        current.dx + (seg.end.dx - current.dx) * t,
+        current.dy + (seg.end.dy - current.dy) * t,
+      );
+      path.lineTo(partial.dx, partial.dy);
+      current = partial;
+      remaining = 0;
+    }
+  }
+  return path;
 }

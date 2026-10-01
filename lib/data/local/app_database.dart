@@ -60,6 +60,10 @@ class CachedTasks extends Table {
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  /// Sólo para tests: permite pasar un executor en memoria
+  /// (`NativeDatabase.memory()`) sin tocar el archivo real.
+  AppDatabase.forTesting(QueryExecutor executor) : super(executor);
+
   @override
   int get schemaVersion => 2;
 

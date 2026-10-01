@@ -86,11 +86,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/pomodoro',
-            // `?task=<id>` pre-selecciona la tarea y abre directo el
-            // wizard (el usuario sólo configura tiempo/intervalos).
-            builder: (_, state) => PomodoroScreen(
-              preselectTaskId: state.uri.queryParameters['task'],
-            ),
+            // El preselect de "Enviar a foco" (⏱) NO viaja por query
+            // params: viaja por `pendingFocusTaskProvider` — ver
+            // focus_controller.dart. Con query params el State de la
+            // pantalla y el ciclo de rebuild del shell se comían la
+            // señal silenciosamente en device.
+            builder: (_, __) => const PomodoroScreen(),
           ),
           GoRoute(
             path: '/calendar',

@@ -9,6 +9,7 @@ import '../../data/models/category.dart';
 import '../../data/models/task.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/task_repository.dart';
+import '../pomodoro/focus_controller.dart';
 import '../../widgets/delete_task_dialog.dart';
 import '../../widgets/edit_task_dialog.dart';
 import '../../widgets/task_card.dart';
@@ -127,7 +128,12 @@ class MyDayScreen extends ConsumerWidget {
                 context: context,
                 builder: (_) => DeleteTaskDialog(task: t),
               ),
-              onSendToFocus: () => context.go('/pomodoro?task=${t.id}'),
+              // ⏱ Enviar a foco: señal por provider (no query params)
+              // y navegación limpia a /pomodoro.
+              onSendToFocus: () {
+                ref.read(pendingFocusTaskProvider.notifier).state = t.id;
+                context.go('/pomodoro');
+              },
             ),
           );
         },

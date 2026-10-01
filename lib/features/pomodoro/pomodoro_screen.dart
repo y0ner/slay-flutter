@@ -28,11 +28,7 @@ import 'focus_model.dart';
 /// 5. Detener mid-run → vuelve al wizard (todo se reconfigura), el
 ///    tiempo trabajado queda en el historial.
 class PomodoroScreen extends ConsumerStatefulWidget {
-  const PomodoroScreen({super.key, this.preselectTaskId});
-
-  /// Id de tarea a pre-seleccionar ("Enviar a foco" desde una
-  /// tarjeta): abre directo el wizard con la tarea ya elegida.
-  final String? preselectTaskId;
+  const PomodoroScreen({super.key});
 
   @override
   ConsumerState<PomodoroScreen> createState() => _PomodoroScreenState();
@@ -50,27 +46,18 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
   int _breakMinutes = 5;
   final _totalCtrl = TextEditingController(text: '25');
 
-  // Para navegar al volver desde otra tab con run activo.
-  bool _hydratedStage = false;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _hydratedStage) return;
-      _hydratedStage = true;
-      // Run activo de una sesión anterior → ir directo al run.
-      final run = ref.read(focusRunProvider);
-      if (run != null) {
+      if (!mounted) return;
+      // Run activo (en curso o restaurado de prefs) → pantalla de run.
+      if (ref.read(focusRunProvider) != null) {
         setState(() => _stage = _PomoStage.running);
         return;
       }
-      // "Enviar a foco" desde una tarjeta → wizard directo con la
-      // tarea ya elegida (sin pasar por la lista).
-      final pre = widget.preselectTaskId;
-      if (pre != null && pre.isNotEmpty) {
-        _pickTaskById(pre);
-      }
+      // ⏱ "Enviar a foco" llegó antes de que esta pantalla existiera.
+      _consumePendingFocusTask();
     });
   }
 
@@ -83,10 +70,15 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
   // ── Acciones ──────────────────────────────────────────────
 
   /// Carga la tarea [taskId] del repo y salta directo al wizard.
+  ///
+  /// `getById` es offline-first (cache local primero): antes usaba
+  /// `getAll()` (red directa) y si Supabase fallaba el error moría
+  /// callado acá — la pantalla quedaba en "elegir tarea" sin
+  /// preseleccionar nada, aunque las listas mostraran las tareas
+  /// desde el cache.
   Future<void> _pickTaskById(String taskId) async {
-    final all = await ref.read(taskRepositoryProvider).getAll();
+    final match = await ref.read(taskRepositoryProvider).getById(taskId);
     if (!mounted) return;
-    final match = all.where((t) => t.id == taskId).firstOrNull;
     if (match == null || match.isCompleted) {
       _openPicker();
       return;
@@ -98,8 +90,18 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
   }
 
   Future<void> _openPicker() async {
-    final tasks = await ref.read(taskRepositoryProvider).getAll();
-    final categories = await ref.read(categoryRepositoryProvider).getAll();
+    List<Task> tasks;
+    List<Category> categories;
+    try {
+      tasks = await ref.read(taskRepositoryProvider).getAll();
+      categories = await ref.read(categoryRepositoryProvider).getAll();
+    } catch (_) {
+      // Sin red (o Supabase caído): caer al cache local — la misma
+      // data que ven las listas de tareas. Antes el picker moría en
+      // silencio con la misma falla que rompía el preselect.
+      tasks = await ref.read(taskRepositoryProvider).getCached();
+      categories = await ref.read(categoryRepositoryProvider).getCached();
+    }
     if (!mounted) return;
     final pending = tasks.where((t) => !t.isCompleted).toList();
     final picked = await showModalBottomSheet<Task>(
@@ -181,8 +183,28 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
 
   // ── Build ─────────────────────────────────────────────────
 
+  /// Lee y limpia la señal de "Enviar a foco" si hay una pendiente.
+  ///
+  /// La señal llega por `pendingFocusTaskProvider` (NO por query
+  /// params del router): la escriben las tarjetas con ⏱ y se consume
+  /// acá — igual montando la pantalla fresca que volviendo a una ya
+  /// viva. Si hay un run en curso, manda el run (no se pisa).
+  void _consumePendingFocusTask() {
+    final pending = ref.read(pendingFocusTaskProvider);
+    if (pending == null || pending.isEmpty) return;
+    // Limpiar YA: la señal es de un solo uso.
+    ref.read(pendingFocusTaskProvider.notifier).state = null;
+    if (ref.read(focusRunProvider) != null) return;
+    _pickTaskById(pending);
+  }
+
   @override
   Widget build(BuildContext context) {
+    // ⏱ "Enviar a foco" mientras esta pantalla ya está viva (el State
+    // sobrevive en el navigator del shell): la señal se procesa igual.
+    ref.listen<String?>(pendingFocusTaskProvider, (_, next) {
+      if (next != null && next.isNotEmpty) _consumePendingFocusTask();
+    });
     final run = ref.watch(focusRunProvider);
     _checkWrapUp(run);
 
@@ -505,8 +527,11 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
                   progress: progress.clamp(0.0, 1.0),
                   color: accent,
                   trackColor: TerminalTheme.lineOf(context),
-                  strokeWidth: 6,
-                  padding: 24,
+                  // El gap visual entre el borde y el cuadro del reloj
+                  // es el `padding` (el trazo se compensa solo). 4px =
+                  // bien pegado, decisión del usuario.
+                  strokeWidth: 8,
+                  padding: 4,
                   child: Container(
                     width: 232,
                     height: 232,
@@ -711,6 +736,7 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 autofocus: true,
+                onChanged: (_) => setDialogState(() {}),
                 decoration: const InputDecoration(labelText: 'minutos extra'),
               ),
               const SizedBox(height: 8),
@@ -724,6 +750,19 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
                 onChanged: s.config.breakMinutes > 0
                     ? (v) => setDialogState(() => wantsBreaks = v)
                     : null,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _extendPreview(
+                  s,
+                  int.tryParse(ctrl.text) ?? 0,
+                  wantsBreaks,
+                ),
+                style: TextStyle(
+                  fontFamily: TerminalTheme.monoFamily,
+                  fontSize: 12,
+                  color: TerminalTheme.mutedOf(context),
+                ),
               ),
             ],
           ),
@@ -752,6 +791,29 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
 // ═══════════════════════════════════════════════════════════════
 // Widgets de apoyo
 // ═══════════════════════════════════════════════════════════════
+
+/// Vista previa del run extendido para el diálogo "¿Cuánto más te
+/// falta?": cuántos intervalos y descansos REALES va a tener el
+/// tiempo extra.
+///
+/// REGRESIÓN: el switch "Con descansos" quedaba encendido sin efecto
+/// visible — un run de N intervalos tiene N-1 descansos, así que si
+/// el extra entra en 1 solo intervalo (≤ minutos por intervalo) no
+/// hay ningún descanso y el usuario no entendía por qué.
+String _extendPreview(FocusRunState s, int extra, bool wantsBreaks) {
+  if (extra <= 0) return '> elegí cuántos minutos extra';
+  if (!wantsBreaks) {
+    return '> $extra min en 1 solo intervalo (sin descansos)';
+  }
+  final per = s.config.workMinutesPerInterval;
+  final n = (extra / per).ceil();
+  final breaks = n - 1;
+  if (breaks <= 0) {
+    return '> $extra min entra en 1 intervalo (≤ $per min) — sin descansos';
+  }
+  return '> $extra min → $n intervalos + $breaks descansos '
+      'de ${s.config.breakMinutes} min';
+}
 
 String _fmt(int seconds) {
   final h = seconds ~/ 3600;

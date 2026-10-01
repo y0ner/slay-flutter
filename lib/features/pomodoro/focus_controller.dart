@@ -560,6 +560,17 @@ final focusRunActiveProvider = Provider<bool>((ref) {
   return true;
 });
 
+/// Señal "Enviar a foco" (⏱ en una tarjeta): id de la tarea que el
+/// usuario quiere preseleccionar en Foco. Lo escriben las pantallas de
+/// tareas justo antes de navegar a `/pomodoro` (URL limpia, sin query
+/// params) y lo consume `PomodoroScreen` al montar o al cambiar.
+///
+/// Por qué un provider y no `/pomodoro?task=<id>`: la señal viaja
+/// directo por Riverpod y no depende de cómo el router reconstruye
+/// páginas ni del ciclo de vida del State — el mecanismo viejo con
+/// query params se perdía silenciosamente en device.
+final pendingFocusTaskProvider = StateProvider<String?>((ref) => null);
+
 /// Persistencia del run activo en SharedPreferences (sobrevive kill).
 class FocusRunPersist {
   static const _key = _kKey;

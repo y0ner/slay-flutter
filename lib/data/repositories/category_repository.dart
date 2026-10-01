@@ -92,6 +92,10 @@ class CategoryRepository {
     return controller.stream;
   }
 
+  /// Cache local de categorías (el mismo fallback que usa
+  /// `watchCategories` cuando falla la red).
+  Future<List<Category>> getCached() => _getCached();
+
   Future<void> _refresh(StreamController<List<Category>> controller) async {
     try {
       final list = await getAll();
